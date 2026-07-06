@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEXUS — Live</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#050810;--panel:rgba(13,20,38,.75);--card:rgba(18,27,48,.7);--border:rgba(0,229,255,.12);
+  --cyan:#00e5ff;--violet:#b166ff;--green:#00ffb3;--red:#ff3860;--amber:#ffb703;
+  --text:#E8F4FF;--t2:#7a8fb5;--t3:#2e3f5c;
+  --mono:'JetBrains Mono',monospace;--sans:'Space Grotesk',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hidden}
+.bg-grid{position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:linear-gradient(rgba(0,229,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,255,.03) 1px,transparent 1px);
+  background-size:48px 48px;
+  -webkit-mask-image:radial-gradient(ellipse 80% 60% at 50% 0%,black 40%,transparent 100%);}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes glowText{0%,100%{text-shadow:0 0 20px currentColor}50%{text-shadow:0 0 34px currentColor}}
+.app{position:relative;z-index:1;display:flex;flex-direction:column;height:100vh}
+.hero{background:var(--panel);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);padding:16px 24px;flex-shrink:0}
+.hero-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.brand{display:flex;align-items:center;gap:12px}
+.orb{width:38px;height:38px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#243154,#050810);display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 0 20px 4px var(--cyan);animation:pulse 2s infinite}
+.brand-name{font-weight:700;font-size:17px;letter-spacing:1.5px}
+.brand-name .a{color:var(--cyan)}
+.brand-sub{font-size:9px;color:var(--t3);letter-spacing:1px;font-family:var(--mono)}
+.badge{font-size:9px;padding:5px 12px;border-radius:20px;font-weight:700;letter-spacing:.6px;border:1px solid;font-family:var(--mono)}
+.badge.green{color:var(--green);border-color:var(--green);background:rgba(0,255,179,.12)}
+.badge.red{color:var(--red);border-color:var(--red);background:rgba(255,56,96,.12)}
+.hero-center{text-align:center;padding:8px 0}
+.total-label{font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;margin-bottom:6px;font-family:var(--mono)}
+.total-value{font-size:44px;font-weight:700;font-family:var(--mono);line-height:1}
+.total-value.up{color:var(--green);animation:glowText 2.5s infinite}
+.total-value.down{color:var(--red);animation:glowText 2.5s infinite}
+.total-change{font-size:14px;font-weight:700;margin-top:6px;display:inline-flex;gap:6px;padding:4px 12px;border-radius:20px;font-family:var(--mono)}
+.total-change.up{color:var(--green);background:rgba(0,255,179,.12)}
+.total-change.down{color:var(--red);background:rgba(255,56,96,.12)}
+.strip{display:flex;justify-content:center;gap:24px;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.04)}
+.stat-lbl{font-size:9px;color:var(--t3);text-transform:uppercase;font-family:var(--mono)}
+.stat-val{font-size:14px;font-weight:700;font-family:var(--mono)}
+.controls{display:flex;gap:8px;justify-content:center;margin-top:10px}
+.btn{padding:7px 16px;border-radius:8px;font-size:12px;font-weight:700;border:1px solid var(--border);background:rgba(0,0,0,.2);color:var(--t2);cursor:pointer;font-family:var(--sans)}
+.btn.primary{background:linear-gradient(135deg,var(--cyan),#00a8c0);color:#020509;border:none}
+.btn.danger{background:rgba(255,56,96,.15);color:var(--red);border-color:var(--red)}
+.main{flex:1;display:grid;grid-template-columns:1fr 380px;overflow:hidden}
+.left{display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--border)}
+.right{display:flex;flex-direction:column;overflow:hidden;background:var(--panel);backdrop-filter:blur(16px)}
+.section-hdr{padding:10px 20px;font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1.5px;font-weight:600;border-bottom:1px solid var(--border);font-family:var(--mono);flex-shrink:0}
+.market-list{overflow-y:auto;flex:1}
+.market-row{display:grid;grid-template-columns:150px 1fr 90px 60px;align-items:center;gap:10px;padding:11px 20px;border-bottom:1px solid rgba(0,229,255,.05)}
+.mkt-name{display:flex;align-items:center;gap:8px}
+.mkt-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.mkt-sym{font-weight:700;font-size:12px}
+.mkt-full{font-size:9px;color:var(--t3)}
+.mkt-price{font-family:var(--mono);font-weight:600;font-size:12px;text-align:right}
+.mkt-chg{font-size:10px;font-weight:600;text-align:right;font-family:var(--mono)}
+.sig-pill{font-size:9px;font-weight:700;padding:3px 7px;border-radius:20px;text-align:center;font-family:var(--mono)}
+.feed{overflow-y:auto;max-height:200px}
+.feed-item{display:flex;align-items:center;gap:9px;padding:8px 16px;border-bottom:1px solid rgba(0,229,255,.04);font-size:12px}
+.feed-side{width:28px;height:20px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700}
+.feed-side.buy{background:rgba(0,255,179,.15);color:var(--green)}
+.feed-side.sell{background:rgba(255,56,96,.15);color:var(--red)}
+.feed-mid{flex:1;min-width:0}
+.feed-pair{font-weight:600;font-family:var(--mono);font-size:11px}
+.feed-price{color:var(--t3);font-size:9px;font-family:var(--mono)}
+.feed-pnl{font-weight:700;font-family:var(--mono);font-size:12px;text-align:right}
+.feed-ts{font-size:9px;color:var(--t3);text-align:right;font-family:var(--mono)}
+.pnl-hero{padding:14px 18px;border-bottom:1px solid var(--border);flex-shrink:0}
+.pnl-title{font-size:11px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;font-family:var(--mono);margin-bottom:6px}
+.pnl-current{font-size:20px;font-weight:700;font-family:var(--mono)}
+.term{flex:1;background:rgba(0,0,0,.3);display:flex;flex-direction:column;min-height:0}
+.term-body{flex:1;overflow-y:auto;padding:4px 0;font-family:var(--mono);font-size:10px}
+.log-row{display:flex;gap:8px;padding:3px 16px}
+.log-ts{color:var(--t3);min-width:52px;flex-shrink:0}
+.info-strip{background:rgba(0,229,255,.06);border:1px solid rgba(0,229,255,.2);border-radius:8px;padding:8px 12px;margin:12px 24px 0;font-size:11px;color:var(--t2);display:flex;align-items:center;gap:8px}
+.connecting{text-align:center;padding:60px;color:var(--t3);font-size:14px}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+</style>
+</head>
+<body>
+<div class="bg-grid"></div>
+<div class="app">
+  <div class="hero">
+    <div class="hero-top">
+      <div class="brand">
+        <div class="orb">🤖</div>
+        <div>
+          <div class="brand-name">NEX<span class="a">US</span></div>
+          <div class="brand-sub">LIVE · RIKTIGA PRISER · PAPER TRADING</div>
+        </div>
+      </div>
+      <div id="bot-badge"><span class="badge red">OFFLINE</span></div>
+    </div>
+    <div class="hero-center">
+      <div class="total-label">Totalt Kontovärde</div>
+      <div class="total-value" id="total">— kr</div>
+      <div class="total-change" id="change">—</div>
+    </div>
+    <div class="strip">
+      <div><div class="stat-lbl">Kassa</div><div class="stat-val" id="cash" style="color:var(--cyan)">—</div></div>
+      <div><div class="stat-lbl">Investerat</div><div class="stat-val" id="invested">—</div></div>
+      <div><div class="stat-lbl">Trades</div><div class="stat-val" id="trades-count">0</div></div>
+      <div><div class="stat-lbl">Träffsäkerhet</div><div class="stat-val" id="winrate">—</div></div>
+      <div><div class="stat-lbl">Uptime</div><div class="stat-val" id="uptime">—</div></div>
+    </div>
+    <div class="controls">
+      <button class="btn primary" id="toggle-btn" onclick="toggleBot()">▶ Starta</button>
+      <button class="btn danger" onclick="resetBot()">↻ Återställ</button>
+    </div>
+  </div>
+  <div class="info-strip">
+    <span>📡</span><span>Prisdata från CoinGecko API · Uppdateras var 15:e sekund · Boten kör var 20:e sekund</span>
+  </div>
+  <div class="main">
+    <div class="left">
+      <div class="section-hdr">Marknad — Live-priser</div>
+      <div class="market-list" id="market"><div class="connecting">Ansluter till servern...</div></div>
+      <div class="section-hdr">Live trades <span id="feed-count" style="float:right;text-transform:none">0 trades</span></div>
+      <div class="feed" id="feed"></div>
+    </div>
+    <div class="right">
+      <div class="pnl-hero">
+        <div class="pnl-title">Realiserat PnL</div>
+        <div class="pnl-current" id="realized">— kr</div>
+      </div>
+      <div class="section-hdr">Aktivitetslogg</div>
+      <div class="term-body" id="terminal"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+function fmtSEK(n, d=0) {
+  const sign = n<0?'-':'';
+  return sign + Math.abs(n).toLocaleString('sv-SE',{minimumFractionDigits:d,maximumFractionDigits:d}) + ' kr';
+}
+
+async function refresh() {
+  try {
+    const res = await fetch('/api/status');
+    const s = await res.json();
+
+    // Bot badge
+    document.getElementById('bot-badge').innerHTML = s.botOn
+      ? '<span class="badge green">ONLINE</span>'
+      : '<span class="badge red">STOPPAD</span>';
+    document.getElementById('toggle-btn').textContent = s.botOn ? '⏹ Stoppa' : '▶ Starta';
+
+    // Header stats
+    const pnlPct = (s.pnl / s.startCash * 100);
+    const totalEl = document.getElementById('total');
+    totalEl.textContent = fmtSEK(s.totalVal);
+    totalEl.className = 'total-value ' + (s.pnl>=0?'up':'down');
+    const changeEl = document.getElementById('change');
+    changeEl.textContent = `${s.pnl>=0?'▲':'▼'} ${s.pnl>=0?'+':''}${fmtSEK(s.pnl,1)} (${pnlPct>=0?'+':''}${pnlPct.toFixed(2)}%)`;
+    changeEl.className = 'total-change ' + (s.pnl>=0?'up':'down');
+    document.getElementById('cash').textContent = fmtSEK(s.cash);
+    document.getElementById('invested').textContent = fmtSEK(s.totalVal - s.cash);
+    document.getElementById('trades-count').textContent = s.trades.length;
+    document.getElementById('realized').textContent = (s.realizedPnl>=0?'+':'') + fmtSEK(s.realizedPnl,1);
+    document.getElementById('realized').style.color = s.realizedPnl>=0 ? 'var(--green)' : 'var(--red)';
+
+    const sellTrades = s.trades.filter(t => t.pnl !== undefined);
+    const wins = sellTrades.filter(t => t.pnl > 0).length;
+    document.getElementById('winrate').textContent = sellTrades.length > 0 ? Math.round(wins/sellTrades.length*100)+'%' : '—';
+
+    // Uptime
+    const uptimeMs = Date.now() - s.startedAt;
+    const days = Math.floor(uptimeMs / 86400000);
+    const hrs = Math.floor((uptimeMs % 86400000) / 3600000);
+    document.getElementById('uptime').textContent = days > 0 ? `${days}d ${hrs}h` : `${hrs}h`;
+
+    // Market list
+    document.getElementById('market').innerHTML = s.assets.map(a => {
+      const price = s.prices[a.id];
+      if (!price) return '';
+      const hist = s.priceHistory[a.id] || [];
+      const first = hist[0] || price;
+      const chg = ((price-first)/first*100);
+      const held = s.holdings[a.id];
+      const sig = s.signals[a.id];
+      const sigColor = sig==='BUY'?'#00ffb3':(sig==='SELL'||sig==='STOPLOSS')?'#ff3860':'#7a8fb5';
+      const sigDisplay = sig==='STOPLOSS'?'SL':sig;
+      return `<div class="market-row">
+        <div class="mkt-name">
+          <div class="mkt-icon" style="background:${a.color}20;color:${a.color}">${a.id[0]}</div>
+          <div><div class="mkt-sym">${a.id} ${held?'<span style="color:'+a.color+';font-size:9px">●</span>':''}</div><div class="mkt-full">${a.name}</div></div>
+        </div>
+        <div style="text-align:right">
+          <div class="mkt-price">${price.toLocaleString('sv-SE',{maximumFractionDigits:price<10?4:0})} kr</div>
+          ${held?`<div style="font-size:10px;color:${(price-held.avgCost)>=0?'#00ffb3':'#ff3860'}">${(price-held.avgCost)>=0?'+':''}${fmtSEK((price-held.avgCost)*held.qty,1)}</div>`:''}
+        </div>
+        <div class="mkt-chg" style="color:${chg>=0?'#00ffb3':'#ff3860'}">${chg>=0?'▲':'▼'}${Math.abs(chg).toFixed(2)}%</div>
+        <div class="sig-pill" style="color:${sigColor};background:${sigColor}20">${sigDisplay}</div>
+      </div>`;
+    }).join('');
+
+    // Trades feed
+    document.getElementById('feed-count').textContent = s.trades.length + ' trades';
+    document.getElementById('feed').innerHTML = s.trades.slice(0,30).map(t => {
+      const pos = t.pnl===undefined?null:t.pnl>=0;
+      return `<div class="feed-item">
+        <div class="feed-side ${t.side==='BUY'?'buy':'sell'}">${t.side==='BUY'?'▲':'▼'}</div>
+        <div class="feed-mid"><div class="feed-pair">${t.assetId}</div><div class="feed-price">@ ${t.price.toLocaleString('sv-SE',{maximumFractionDigits:1})} kr</div></div>
+        <div><div class="feed-pnl" style="color:${pos===null?'#E8F4FF':pos?'#00ffb3':'#ff3860'}">${pos===null?fmtSEK(t.usd):((t.pnl>=0?'+':'')+fmtSEK(t.pnl,1))}</div><div class="feed-ts">${t.ts}</div></div>
+      </div>`;
+    }).join('') || '<div style="padding:20px;text-align:center;color:var(--t3);font-size:12px">Inga trades ännu — boten letar efter köpsignal</div>';
+
+    // Log
+    const colors = {buy:'#00ffb3','sell-win':'#00ffb3','sell-loss':'#ff3860',system:'#00e5ff',error:'#ff3860',info:'#7a8fb5'};
+    document.getElementById('terminal').innerHTML = s.logs.map(l =>
+      `<div class="log-row"><span class="log-ts">${l.ts}</span><span style="color:${colors[l.type]||'#7a8fb5'}">${l.msg}</span></div>`
+    ).join('');
+  } catch (e) {
+    document.getElementById('market').innerHTML = '<div class="connecting">Kan inte ansluta till servern...</div>';
+  }
+}
+
+async function toggleBot() {
+  await fetch('/api/toggle', {method:'POST'});
+  refresh();
+}
+async function resetBot() {
+  if (!confirm('Återställ boten? All historik försvinner.')) return;
+  await fetch('/api/reset', {method:'POST'});
+  refresh();
+}
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>
