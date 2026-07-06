@@ -12,8 +12,11 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ── STATE (bot memory) ──
-// Data sparas i state.json så boten kommer ihåg allt även efter omstart
-const STATE_FILE = path.join(__dirname, 'state.json');
+// VIKTIGT: sparas i /app/data/ som är en Railway Volume (permanent lagring)
+// Utan detta skulle all data (trades, dagar, kassa) försvinna varje gång koden uppdateras
+const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+const STATE_FILE = path.join(DATA_DIR, 'state.json');
 let state = {
   cash: 1000,
   startCash: 1000,
