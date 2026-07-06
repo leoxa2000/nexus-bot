@@ -29,7 +29,10 @@ let state = {
   worstTrade: null,
   winStreak: 0,
   lossStreak: 0,
-  startedAt: Date.now()
+  startedAt: Date.now(),
+  testDurationDays: 14,        // Fas 3 target — how long we're paper trading before deciding
+  testStartDate: new Date().toISOString().slice(0,10),
+  dailySnapshots: []           // [{date, totalVal, trades}] — one entry per day for progress chart
 };
 
 // Load saved state if it exists
@@ -208,13 +211,81 @@ function botTick() {
 }
 
 // ═══════════════════════════════════════════════════════
-// INTERVALS
+// DAILY SNAPSHOT — captures progress once per day for the overview chart
 // ═══════════════════════════════════════════════════════
+function checkDailySnapshot() {
+  const today = new Date().toISOString().slice(0,10);
+  const last = state.dailySnapshots[state.dailySnapshots.length - 1];
+  if (last && last.date === today) return; // already snapshotted today
+
+  const portVal = Object.entries(state.holdings)
+    .reduce((s,[id,h]) => s + (currentPrices[id] || h.avgCost) * h.qty, 0);
+  const totalVal = state.cash + portVal;
+
+  state.dailySnapshots.push({ date: today, totalVal, trades: state.trades.length });
+  if (state.dailySnapshots.length > 90) state.dailySnapshots.shift();
+  saveState();
+  log(`📅 Ny dag: ${today} — kontovärde ${totalVal.toFixed(0)} kr`, 'system');
+}
+
+// Plain-language verdict based on real results so far — no need to interpret numbers yourself
+function getVerdict() {
+  const portVal = Object.entries(state.holdings)
+    .reduce((s,[id,h]) => s + (currentPrices[id] || h.avgCost) * h.qty, 0);
+  const totalVal = state.cash + portVal;
+  const pnlPct = ((totalVal - state.startCash) / state.startCash) * 100;
+  const sellTrades = state.trades.filter(t => t.pnl !== undefined);
+  const wins = sellTrades.filter(t => t.pnl > 0).length;
+  const winRate = sellTrades.length > 0 ? (wins/sellTrades.length*100) : null;
+  const daysElapsed = state.dailySnapshots.length || 1;
+
+  // Not enough data yet
+  if (sellTrades.length < 5 || daysElapsed < 2) {
+    return {
+      status: 'samlar-data',
+      icon: '🔬',
+      color: 'cyan',
+      title: 'Samlar data',
+      text: `Boten behöver fler trades och dagar innan vi kan säga något säkert. ${sellTrades.length} avslutade trades hittills.`
+    };
+  }
+  if (pnlPct > 0 && winRate >= 55) {
+    return {
+      status: 'bra',
+      icon: '✅',
+      color: 'green',
+      title: 'Går bra',
+      text: `Kontot är upp ${pnlPct.toFixed(1)}% med ${winRate.toFixed(0)}% träffsäkerhet. Fortsätt låta den köra.`
+    };
+  }
+  if (pnlPct >= -3 && winRate >= 40) {
+    return {
+      status: 'osäkert',
+      icon: '⚠️',
+      color: 'amber',
+      title: 'Osäkert läge',
+      text: `Kontot är ${pnlPct>=0?'upp':'ner'} ${Math.abs(pnlPct).toFixed(1)}% med ${winRate.toFixed(0)}% träffsäkerhet. För tidigt att dra slutsatser — låt den fortsätta.`
+    };
+  }
+  return {
+    status: 'dåligt',
+    icon: '❌',
+    color: 'red',
+    title: 'Går dåligt',
+    text: `Kontot är ner ${Math.abs(pnlPct).toFixed(1)}% med bara ${winRate?.toFixed(0)}% träffsäkerhet. Om detta fortsätter bör strategin justeras.`
+  };
+}
+
+
 setInterval(fetchPrices, 45000); // every 45 sec — stays safely under CoinGecko's free rate limit
 setInterval(botTick, 60000);     // check for trades every 60 sec (real markets move slower than our old demo)
+setInterval(checkDailySnapshot, 60000 * 10); // check every 10 min if a new day has started
 
 // Fetch initial prices immediately
-fetchPrices().then(() => log('✓ NEXUS bot startad — hämtar riktiga priser från CoinGecko', 'system'));
+fetchPrices().then(() => {
+  log('✓ NEXUS bot startad — hämtar riktiga priser från CoinGecko', 'system');
+  checkDailySnapshot();
+});
 
 // ═══════════════════════════════════════════════════════
 // API ENDPOINTS
@@ -223,6 +294,9 @@ app.get('/api/status', (req, res) => {
   const portVal = Object.entries(state.holdings)
     .reduce((s,[id,h]) => s + (currentPrices[id] || h.avgCost) * h.qty, 0);
   const totalVal = state.cash + portVal;
+
+  const daysElapsed = state.dailySnapshots.length || 1;
+  const daysRemaining = Math.max(0, state.testDurationDays - daysElapsed);
 
   res.json({
     prices: currentPrices,
@@ -244,7 +318,14 @@ app.get('/api/status', (req, res) => {
     startedAt: state.startedAt,
     lastPriceUpdate,
     assets: ASSETS,
-    signals: Object.fromEntries(ASSETS.map(a => [a.id, getSignal(a.id)]))
+    signals: Object.fromEntries(ASSETS.map(a => [a.id, getSignal(a.id)])),
+    // Fas 3 overview data
+    testDurationDays: state.testDurationDays,
+    testStartDate: state.testStartDate,
+    daysElapsed,
+    daysRemaining,
+    dailySnapshots: state.dailySnapshots,
+    verdict: getVerdict()
   });
 });
 
@@ -266,7 +347,9 @@ app.post('/api/reset', express.json(), (req, res) => {
   state.winStreak = 0;
   state.lossStreak = 0;
   state.startedAt = Date.now();
-  log('Bot återställd', 'system');
+  state.testStartDate = new Date().toISOString().slice(0,10);
+  state.dailySnapshots = [];
+  log('Bot återställd — ny testperiod startad', 'system');
   saveState();
   res.json({ ok: true });
 });
