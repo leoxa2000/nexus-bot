@@ -189,6 +189,10 @@ function computeRSI(hist, period=7) {
 }
 
 // Wraps the pure technical signal with the news veto layer
+// Hur mycket priset får backa från sin senaste topp innan boten säljer
+// (när "vinstmål"-reglaget väl aktiverat trailingen)
+const TRAILING_PULLBACK_PCT = 0.3;
+
 function getSignal(assetId) {
   const hist = state.priceHistory[assetId];
   if (!hist || hist.length < 8) return 'HOLD';
@@ -203,10 +207,22 @@ function getSignal(assetId) {
   if (!held) {
     if (posInRange < 0.45 || rsi < 45) signal = 'BUY';
   } else {
-    const profitTarget = price > held.avgCost * (1 + state.cfg.takeProfit/100);
+    // Uppdatera positionens toppris — trailing-logiken bygger på detta
+    if (!held.peak || price > held.peak) held.peak = price;
+
     const stopLoss = price < held.avgCost * (1 - state.cfg.stopLoss/100);
-    if (stopLoss) signal = 'STOPLOSS';
-    else if (profitTarget) signal = 'SELL';
+    if (stopLoss) {
+      signal = 'STOPLOSS';
+    } else {
+      // "Vinstmål" fungerar nu som en tröskel för att AKTIVERA trailing-bevakning,
+      // inte ett fast tal att sälja exakt vid. Väl aktiverad säljer boten
+      // så fort priset backar TRAILING_PULLBACK_PCT % från sin senaste topp.
+      const trailingArmed = price >= held.avgCost * (1 + state.cfg.takeProfit/100);
+      if (trailingArmed) {
+        const pullbackPct = ((held.peak - price) / held.peak) * 100;
+        if (pullbackPct >= TRAILING_PULLBACK_PCT) signal = 'SELL';
+      }
+    }
   }
 
   // Nyhetsveto: blockerar bara NYA köp, tvingar aldrig fram en panik-sälj av befintliga innehav
@@ -382,10 +398,11 @@ function botTick() {
       if (usd < 10 || usd > state.cash) return;
       const qty = usd / price;
       state.cash -= usd;
-      const cur = state.holdings[asset.id] || { qty:0, avgCost:0 };
+      const cur = state.holdings[asset.id] || { qty:0, avgCost:0, peak:0 };
       const nq = cur.qty + qty;
       const na = (cur.qty*cur.avgCost + usd) / nq;
-      state.holdings[asset.id] = { qty:nq, avgCost:na };
+      const newPeak = Math.max(cur.peak || 0, price); // toppris bevaras eller sätts vid köp
+      state.holdings[asset.id] = { qty:nq, avgCost:na, peak:newPeak };
       state.trades.unshift({
         id: Date.now(), side: 'BUY', assetId: asset.id, name: asset.name,
         qty, price, usd, ts: new Date().toLocaleTimeString('sv-SE'),
@@ -400,6 +417,7 @@ function botTick() {
       const pnl = (price - h.avgCost) * h.qty;
       state.cash += usd;
       state.realizedPnl += pnl;
+      const soldPeak = h.peak;
       delete state.holdings[asset.id];
       state.trades.unshift({
         id: Date.now(), side: 'SÄLJ', assetId: asset.id, name: asset.name,
@@ -413,8 +431,9 @@ function botTick() {
       else { state.lossStreak++; state.winStreak = 0; }
       if (state.bestTrade === null || pnl > state.bestTrade) state.bestTrade = pnl;
       if (state.worstTrade === null || pnl < state.worstTrade) state.worstTrade = pnl;
-      const emoji = signal === 'STOPLOSS' ? '🛑' : '🎯';
-      log(`${emoji} SÄLJ ${asset.id} @ ${price.toFixed(0)} kr — PnL: ${pnl>=0?'+':''}${pnl.toFixed(1)} kr`, pnl>=0?'sell-win':'sell-loss');
+      const emoji = signal === 'STOPLOSS' ? '🛑' : '📉';
+      const reasonTxt = signal === 'STOPLOSS' ? 'stop loss' : `trend vände (topp ${soldPeak.toFixed(0)} kr)`;
+      log(`${emoji} SÄLJ ${asset.id} @ ${price.toFixed(0)} kr — ${reasonTxt} — PnL: ${pnl>=0?'+':''}${pnl.toFixed(1)} kr`, pnl>=0?'sell-win':'sell-loss');
     }
   });
 
