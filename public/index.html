@@ -24,8 +24,7 @@ body{overflow-y:auto}
 .wrap{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:24px 20px 60px}
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 
-/* ═══ TOP BRAND BAR ═══ */
-.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px}
 .brand{display:flex;align-items:center;gap:12px}
 .orb{width:36px;height:36px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#243154,#050810);display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 0 20px 4px var(--cyan);animation:pulse 2s infinite}
 .brand-name{font-weight:700;font-size:16px;letter-spacing:1px}
@@ -34,24 +33,23 @@ body{overflow-y:auto}
 .badge{font-size:9px;padding:5px 12px;border-radius:20px;font-weight:700;letter-spacing:.6px;border:1px solid;font-family:var(--mono)}
 .badge.green{color:var(--green);border-color:var(--green);background:rgba(0,255,179,.12)}
 .badge.red{color:var(--red);border-color:var(--red);background:rgba(255,56,96,.12)}
-.controls{display:flex;gap:8px}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
 .btn{padding:8px 16px;border-radius:8px;font-size:12px;font-weight:700;border:1px solid var(--border);background:rgba(0,0,0,.2);color:var(--t2);cursor:pointer;font-family:var(--sans)}
 .btn.primary{background:linear-gradient(135deg,var(--cyan),#00a8c0);color:#020509;border:none}
 .btn.danger{background:rgba(255,56,96,.15);color:var(--red);border-color:var(--red)}
+.btn.ghost{background:transparent}
 
-/* ═══ VERDICT BANNER — the "how is it going" answer, big and unmissable ═══ */
-.verdict{border-radius:18px;padding:22px 26px;margin-bottom:20px;display:flex;align-items:center;gap:20px;border:1.5px solid}
+.verdict{border-radius:18px;padding:22px 26px;margin-bottom:16px;display:flex;align-items:center;gap:20px;border:1.5px solid}
 .verdict.cyan{background:rgba(0,229,255,.06);border-color:rgba(0,229,255,.3)}
 .verdict.green{background:rgba(0,255,179,.06);border-color:rgba(0,255,179,.3)}
 .verdict.amber{background:rgba(255,183,3,.06);border-color:rgba(255,183,3,.3)}
-.verdict.red{background:rgba(255,56,96,.06);border-color:rgba(255,56,96,.3)}
+.verdict.red{background:rgba(255,56,96,.06);border-color:rgba(255,56,96,.3);animation:pulse 2s infinite}
 .verdict-icon{font-size:44px;flex-shrink:0}
 .verdict-title{font-size:19px;font-weight:700;margin-bottom:4px}
 .verdict-title.cyan{color:var(--cyan)}.verdict-title.green{color:var(--green)}.verdict-title.amber{color:var(--amber)}.verdict-title.red{color:var(--red)}
 .verdict-text{font-size:13px;color:var(--t2);line-height:1.5}
 
-/* ═══ PROGRESS BAR — day X of 14 ═══ */
-.progress-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px 22px;margin-bottom:20px}
+.progress-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px 22px;margin-bottom:16px}
 .progress-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
 .progress-label{font-size:11px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono)}
 .progress-days{font-size:15px;font-weight:700;font-family:var(--mono)}
@@ -60,8 +58,7 @@ body{overflow-y:auto}
 .progress-fill{height:100%;background:linear-gradient(90deg,var(--cyan),var(--violet));border-radius:6px;transition:width .5s}
 .progress-sub{font-size:11px;color:var(--t3);margin-top:8px}
 
-/* ═══ TOP METRIC GRID ═══ */
-.metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
 .metric-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px}
 .metric-label{font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;font-family:var(--mono)}
 .metric-val{font-size:26px;font-weight:700;font-family:var(--mono);line-height:1}
@@ -69,26 +66,58 @@ body{overflow-y:auto}
 .metric-val.down{color:var(--red)}
 .metric-sub{font-size:11px;color:var(--t2);margin-top:4px}
 
-/* ═══ MAIN TWO COLUMN ═══ */
-.main-grid{display:grid;grid-template-columns:1fr 380px;gap:16px}
+/* Settings panel */
+.settings-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px 22px;margin-bottom:16px}
+.settings-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;cursor:pointer}
+.settings-title{font-size:12px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);font-weight:600}
+.settings-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.slider-box{background:rgba(0,0,0,.2);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+.slider-label{display:flex;justify-content:space-between;font-size:11px;color:var(--t2);margin-bottom:8px;font-family:var(--mono)}
+.slider-val{font-weight:700;color:var(--cyan)}
+input[type=range]{width:100%;height:3px;-webkit-appearance:none;background:var(--border);border-radius:2px;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--cyan);cursor:pointer;box-shadow:0 0 8px var(--cyan)}
+.slider-range{display:flex;justify-content:space-between;font-size:9px;color:var(--t3);margin-top:4px;font-family:var(--mono)}
+.save-cfg-btn{margin-top:14px;width:100%;padding:10px;background:linear-gradient(135deg,var(--cyan),#00a8c0);border:none;border-radius:9px;color:#020509;font-weight:700;font-size:12px;cursor:pointer;font-family:var(--sans)}
+
+/* Kill switch banner */
+.killswitch-banner{background:rgba(255,56,96,.12);border:1.5px solid var(--red);border-radius:16px;padding:18px 22px;margin-bottom:16px;display:flex;align-items:center;gap:16px;animation:pulse 1.5s infinite}
+.killswitch-icon{font-size:36px}
+.killswitch-title{font-size:16px;font-weight:700;color:var(--red)}
+.killswitch-text{font-size:12px;color:var(--t2);margin-top:4px}
+
+/* Heat map + donut row */
+.overview-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-bottom:16px}
 .panel{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden;margin-bottom:16px}
 .panel-hdr{padding:12px 18px;font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1.5px;font-weight:600;border-bottom:1px solid var(--border);font-family:var(--mono);display:flex;justify-content:space-between}
+.heatmap-body{padding:16px;display:flex;flex-wrap:wrap;gap:10px;min-height:100px;align-content:flex-start}
+.heat-tile{border-radius:12px;padding:14px;display:flex;flex-direction:column;justify-content:space-between;border:1.5px solid;transition:transform .15s}
+.heat-tile:hover{transform:scale(1.03)}
+.heat-sym{font-weight:700;font-family:var(--mono)}
+.heat-pct{font-size:20px;font-weight:800;font-family:var(--mono);margin-top:6px}
+.heat-empty{padding:30px;text-align:center;color:var(--t3);font-size:12px;width:100%}
 
-/* Equity chart */
+.donut-wrap{padding:16px;display:flex;align-items:center;gap:16px}
+.donut-legend{flex:1;display:flex;flex-direction:column;gap:6px}
+.legend-item{display:flex;align-items:center;gap:8px;font-size:11px}
+.legend-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+.legend-label{flex:1;color:var(--t2)}
+.legend-val{font-family:var(--mono);font-weight:600}
+
 .chart-wrap{padding:16px 18px}
 
-/* Market rows */
 .market-row{display:grid;grid-template-columns:150px 1fr 90px 60px;align-items:center;gap:10px;padding:11px 18px;border-bottom:1px solid rgba(0,229,255,.05)}
 .market-row:last-child{border-bottom:none}
 .mkt-name{display:flex;align-items:center;gap:8px}
-.mkt-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.mkt-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;position:relative}
+.mkt-icon .veto-dot{position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:var(--red);border:1.5px solid var(--bg)}
 .mkt-sym{font-weight:700;font-size:12px}
 .mkt-full{font-size:9px;color:var(--t3)}
 .mkt-price{font-family:var(--mono);font-weight:600;font-size:12px;text-align:right}
 .mkt-chg{font-size:10px;font-weight:600;text-align:right;font-family:var(--mono)}
 .sig-pill{font-size:9px;font-weight:700;padding:3px 7px;border-radius:20px;text-align:center;font-family:var(--mono)}
 
-/* Feed */
+.main-grid{display:grid;grid-template-columns:1fr 380px;gap:16px}
+
 .feed{max-height:220px;overflow-y:auto}
 .feed-item{display:flex;align-items:center;gap:9px;padding:9px 18px;border-bottom:1px solid rgba(0,229,255,.04);font-size:12px}
 .feed-item:last-child{border-bottom:none}
@@ -102,16 +131,18 @@ body{overflow-y:auto}
 .feed-ts{font-size:9px;color:var(--t3);text-align:right;font-family:var(--mono)}
 .empty{padding:24px;text-align:center;color:var(--t3);font-size:12px}
 
-/* Terminal / log */
 .term-body{max-height:260px;overflow-y:auto;padding:6px 0;font-family:var(--mono);font-size:10px;background:rgba(0,0,0,.25)}
 .log-row{display:flex;gap:8px;padding:3px 16px}
 .log-ts{color:var(--t3);min-width:52px;flex-shrink:0}
 
-.info-strip{background:rgba(0,229,255,.06);border:1px solid rgba(0,229,255,.2);border-radius:10px;padding:10px 16px;margin-bottom:20px;font-size:11px;color:var(--t2);display:flex;align-items:center;gap:8px}
+.info-strip{background:rgba(0,229,255,.06);border:1px solid rgba(0,229,255,.2);border-radius:10px;padding:10px 16px;margin-bottom:16px;font-size:11px;color:var(--t2);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.news-badge{font-size:9px;padding:2px 8px;border-radius:10px;font-family:var(--mono);font-weight:700}
 
 @media (max-width: 900px){
   .main-grid{grid-template-columns:1fr}
   .metric-grid{grid-template-columns:repeat(2,1fr)}
+  .settings-grid{grid-template-columns:1fr}
+  .overview-grid{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -130,15 +161,25 @@ body{overflow-y:auto}
     <div class="controls">
       <span id="bot-badge"><span class="badge red">OFFLINE</span></span>
       <button class="btn primary" id="toggle-btn" onclick="toggleBot()">▶ Starta</button>
+      <button class="btn ghost" id="news-btn" onclick="toggleNews()">🛡️ Nyhetsveto: PÅ</button>
       <button class="btn danger" onclick="resetBot()">↻ Återställ</button>
     </div>
   </div>
 
   <div class="info-strip">
-    <span>📡</span><span>Prisdata från CoinGecko · Uppdateras var 45:e sekund · Boten analyserar var 60:e sekund</span>
+    <span>📡</span><span>Priser var 30:e sek · Dashboard var 10:e sek</span>
+    <span id="news-status-strip" style="margin-left:auto"></span>
   </div>
 
-  <!-- VERDICT: the plain-language "how is it going" answer -->
+  <!-- KILL SWITCH BANNER (only shown if triggered) -->
+  <div class="killswitch-banner" id="killswitch-banner" style="display:none">
+    <div class="killswitch-icon">🛑</div>
+    <div>
+      <div class="killswitch-title">NÖDBROMS AKTIVERAD</div>
+      <div class="killswitch-text" id="killswitch-text">Kontot föll för mycket från sin topp. Boten är stoppad tills du granskat läget.</div>
+    </div>
+  </div>
+
   <div class="verdict" id="verdict-box">
     <div class="verdict-icon" id="verdict-icon">🔬</div>
     <div>
@@ -147,7 +188,6 @@ body{overflow-y:auto}
     </div>
   </div>
 
-  <!-- PROGRESS: day X of 14 -->
   <div class="progress-card">
     <div class="progress-top">
       <span class="progress-label">Testperiod (Fas 3)</span>
@@ -157,7 +197,34 @@ body{overflow-y:auto}
     <div class="progress-sub" id="progress-sub">Boten samlar data för att avgöra om strategin fungerar innan riktiga pengar sätts in.</div>
   </div>
 
-  <!-- TOP METRICS -->
+  <!-- SETTINGS: the three sliders the user controls -->
+  <div class="settings-card">
+    <div class="settings-hdr" onclick="toggleSettings()">
+      <span class="settings-title">⚙ Inställningar — dina reglage</span>
+      <span id="settings-chevron" style="color:var(--t3)">▼</span>
+    </div>
+    <div id="settings-body">
+      <div class="settings-grid">
+        <div class="slider-box">
+          <div class="slider-label"><span>Kapital per trade</span><span class="slider-val" id="tradeSize-val">8%</span></div>
+          <input type="range" min="1" max="50" step="1" value="8" id="tradeSize-slider" oninput="document.getElementById('tradeSize-val').textContent=this.value+'%'">
+          <div class="slider-range"><span>1%</span><span>Andel av kassan som satsas per köp</span><span>50%</span></div>
+        </div>
+        <div class="slider-box">
+          <div class="slider-label"><span>Vinstmål per trade</span><span class="slider-val" id="takeProfit-val">0.6%</span></div>
+          <input type="range" min="0.1" max="10" step="0.1" value="0.6" id="takeProfit-slider" oninput="document.getElementById('takeProfit-val').textContent=this.value+'%'">
+          <div class="slider-range"><span>0.1%</span><span>Säljer när priset stigit så här mycket</span><span>10%</span></div>
+        </div>
+        <div class="slider-box">
+          <div class="slider-label"><span>Nödbroms</span><span class="slider-val" id="killSwitchPct-val">20%</span></div>
+          <input type="range" min="5" max="50" step="1" value="20" id="killSwitchPct-slider" oninput="document.getElementById('killSwitchPct-val').textContent=this.value+'%'">
+          <div class="slider-range"><span>5%</span><span>Stoppar boten vid nedgång från toppen</span><span>50%</span></div>
+        </div>
+      </div>
+      <button class="save-cfg-btn" onclick="saveConfig()">💾 Spara inställningar</button>
+    </div>
+  </div>
+
   <div class="metric-grid">
     <div class="metric-card">
       <div class="metric-label">Totalt Kontovärde</div>
@@ -178,6 +245,21 @@ body{overflow-y:auto}
       <div class="metric-label">Uptime</div>
       <div class="metric-val" style="font-size:18px" id="uptime">—</div>
       <div class="metric-sub" id="realized">—</div>
+    </div>
+  </div>
+
+  <!-- HEAT MAP + DONUT -->
+  <div class="overview-grid">
+    <div class="panel" style="margin-bottom:0">
+      <div class="panel-hdr"><span>Heat Map — dina positioner</span></div>
+      <div class="heatmap-body" id="heatmap"><div class="heat-empty">Inga öppna positioner just nu</div></div>
+    </div>
+    <div class="panel" style="margin-bottom:0">
+      <div class="panel-hdr"><span>Fördelning</span></div>
+      <div class="donut-wrap">
+        <canvas id="donut-canvas" width="120" height="120"></canvas>
+        <div class="donut-legend" id="donut-legend"></div>
+      </div>
     </div>
   </div>
 
@@ -207,9 +289,41 @@ body{overflow-y:auto}
 </div>
 
 <script>
+let settingsOpen = true;
+function toggleSettings(){
+  settingsOpen = !settingsOpen;
+  document.getElementById('settings-body').style.display = settingsOpen ? 'block' : 'none';
+  document.getElementById('settings-chevron').textContent = settingsOpen ? '▼' : '▶';
+}
+
 function fmtSEK(n, d=0) {
   const sign = n<0?'-':'';
   return sign + Math.abs(n).toLocaleString('sv-SE',{minimumFractionDigits:d,maximumFractionDigits:d}) + ' kr';
+}
+
+async function saveConfig(){
+  const tradeSize = document.getElementById('tradeSize-slider').value;
+  const takeProfit = document.getElementById('takeProfit-slider').value;
+  const killSwitchPct = document.getElementById('killSwitchPct-slider').value;
+  await fetch('/api/config', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ tradeSize, takeProfit, killSwitchPct })
+  });
+  refresh();
+}
+
+async function toggleBot() {
+  await fetch('/api/toggle', {method:'POST'});
+  refresh();
+}
+async function toggleNews() {
+  await fetch('/api/toggle-news', {method:'POST'});
+  refresh();
+}
+async function resetBot() {
+  if (!confirm('Återställ boten? All historik försvinner.')) return;
+  await fetch('/api/reset', {method:'POST'});
+  refresh();
 }
 
 function drawEquityChart(snapshots, startCash) {
@@ -235,7 +349,6 @@ function drawEquityChart(snapshots, startCash) {
   const tx = i => pad.l + (i/(vals.length-1))*cW;
   const ty = v => pad.t + cH - ((v-mn)/rng)*cH;
 
-  // grid + labels
   for (let i=0;i<=3;i++){
     const y = pad.t + (cH/3)*i;
     ctx.strokeStyle='rgba(255,255,255,.05)'; ctx.lineWidth=1;
@@ -244,32 +357,51 @@ function drawEquityChart(snapshots, startCash) {
     ctx.fillStyle='rgba(255,255,255,.3)'; ctx.font='9px JetBrains Mono, monospace'; ctx.textAlign='right';
     ctx.fillText(Math.round(v)+' kr', pad.l-6, y+3);
   }
-  // start line
   const startY = ty(startCash);
   ctx.strokeStyle='rgba(255,255,255,.15)'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
   ctx.beginPath(); ctx.moveTo(pad.l,startY); ctx.lineTo(W-pad.r,startY); ctx.stroke(); ctx.setLineDash([]);
 
   const color = vals[vals.length-1] >= startCash ? '#00ffb3' : '#ff3860';
-  // area
   ctx.beginPath();
   vals.forEach((v,i)=>i===0?ctx.moveTo(tx(i),ty(v)):ctx.lineTo(tx(i),ty(v)));
   ctx.lineTo(tx(vals.length-1),pad.t+cH); ctx.lineTo(pad.l,pad.t+cH); ctx.closePath();
   const gr = ctx.createLinearGradient(0,pad.t,0,pad.t+cH);
   gr.addColorStop(0,color+'40'); gr.addColorStop(1,'rgba(0,0,0,0)');
   ctx.fillStyle = gr; ctx.fill();
-  // line
   ctx.beginPath();
   vals.forEach((v,i)=>i===0?ctx.moveTo(tx(i),ty(v)):ctx.lineTo(tx(i),ty(v)));
   ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.lineJoin='round'; ctx.stroke();
-  // dots
   vals.forEach((v,i)=>{
     ctx.beginPath(); ctx.arc(tx(i),ty(v),3,0,Math.PI*2); ctx.fillStyle=color; ctx.fill();
   });
-  // day labels (first, last)
   ctx.fillStyle='rgba(255,255,255,.35)'; ctx.font='9px JetBrains Mono, monospace'; ctx.textAlign='left';
   ctx.fillText(snapshots[0].date.slice(5), pad.l, H-4);
   ctx.textAlign='right';
   ctx.fillText(snapshots[snapshots.length-1].date.slice(5), W-pad.r, H-4);
+}
+
+function drawDonut(segments) {
+  const canvas = document.getElementById('donut-canvas');
+  const ctx = canvas.getContext('2d');
+  const cx = 60, cy = 60, rOuter = 55, rInner = 32;
+  ctx.clearRect(0,0,120,120);
+  const total = segments.reduce((s,x)=>s+x.value,0) || 1;
+  let start = -Math.PI/2;
+  segments.forEach(seg => {
+    const angle = (seg.value/total) * Math.PI*2;
+    ctx.beginPath();
+    ctx.moveTo(cx,cy);
+    ctx.arc(cx,cy,rOuter,start,start+angle);
+    ctx.closePath();
+    ctx.fillStyle = seg.color;
+    ctx.fill();
+    start += angle;
+  });
+  // Hole
+  ctx.beginPath();
+  ctx.arc(cx,cy,rInner,0,Math.PI*2);
+  ctx.fillStyle = '#0D1626';
+  ctx.fill();
 }
 
 async function refresh() {
@@ -277,11 +409,29 @@ async function refresh() {
     const res = await fetch('/api/status');
     const s = await res.json();
 
-    // Bot badge
+    // Bot badge + kill switch
     document.getElementById('bot-badge').innerHTML = s.botOn
       ? '<span class="badge green">ONLINE</span>'
       : '<span class="badge red">STOPPAD</span>';
     document.getElementById('toggle-btn').textContent = s.botOn ? '⏹ Stoppa' : '▶ Starta';
+    document.getElementById('news-btn').textContent = s.newsVetoEnabled ? '🛡️ Nyhetsveto: PÅ' : '🛡️ Nyhetsveto: AV';
+
+    document.getElementById('killswitch-banner').style.display = s.haltedByKillSwitch ? 'flex' : 'none';
+    if (s.haltedByKillSwitch) {
+      const dropPct = ((s.highWaterMark - s.totalVal)/s.highWaterMark*100).toFixed(1);
+      document.getElementById('killswitch-text').textContent = `Kontot föll ${dropPct}% från högsta värdet (${fmtSEK(s.highWaterMark)}). Granska läget och tryck Starta när du är redo.`;
+    }
+
+    // News status strip
+    const newsStrip = document.getElementById('news-status-strip');
+    if (!s.newsConfigured) {
+      newsStrip.innerHTML = '<span class="news-badge" style="color:var(--t3);background:rgba(255,255,255,.05)">🛡️ Nyhetsveto: ej konfigurerat</span>';
+    } else {
+      const blocked = Object.entries(s.newsStatus||{}).filter(([id,ns])=>ns.blocked).map(([id])=>id);
+      newsStrip.innerHTML = blocked.length
+        ? `<span class="news-badge" style="color:var(--red);background:rgba(255,56,96,.12)">🛡️ ${blocked.length} blockerad: ${blocked.join(', ')}</span>`
+        : `<span class="news-badge" style="color:var(--green);background:rgba(0,255,179,.1)">🛡️ Inga blockeringar · Claude: ${s.claudeCallsToday}/${s.maxClaudeCallsPerDay} idag</span>`;
+    }
 
     // Verdict banner
     const v = s.verdict;
@@ -293,13 +443,24 @@ async function refresh() {
     titleEl.className = 'verdict-title ' + v.color;
     document.getElementById('verdict-text').textContent = v.text;
 
-    // Progress bar
+    // Progress
     const pct = Math.min(100, (s.daysElapsed / s.testDurationDays) * 100);
     document.getElementById('progress-days').innerHTML = `Dag <span class="highlight">${s.daysElapsed}</span> av ${s.testDurationDays}`;
     document.getElementById('progress-fill').style.width = pct + '%';
     document.getElementById('progress-sub').textContent = s.daysRemaining > 0
       ? `${s.daysRemaining} dagar kvar innan vi utvärderar om strategin är redo för riktiga pengar.`
       : `Testperioden är klar! Dags att utvärdera resultatet tillsammans.`;
+
+    // Sync sliders with server (only if not being actively dragged — simple approach: just set on load-ish)
+    if (!window.__slidersInitialized) {
+      document.getElementById('tradeSize-slider').value = s.cfg.tradeSize;
+      document.getElementById('tradeSize-val').textContent = s.cfg.tradeSize+'%';
+      document.getElementById('takeProfit-slider').value = s.cfg.takeProfit;
+      document.getElementById('takeProfit-val').textContent = s.cfg.takeProfit+'%';
+      document.getElementById('killSwitchPct-slider').value = s.cfg.killSwitchPct;
+      document.getElementById('killSwitchPct-val').textContent = s.cfg.killSwitchPct+'%';
+      window.__slidersInitialized = true;
+    }
 
     // Top metrics
     const pnlPct = (s.pnl / s.startCash * 100);
@@ -321,8 +482,44 @@ async function refresh() {
     document.getElementById('uptime').textContent = days > 0 ? `${days}d ${hrs}h` : `${hrs}h`;
     document.getElementById('realized').textContent = 'Realiserat: ' + (s.realizedPnl>=0?'+':'') + fmtSEK(s.realizedPnl,1);
 
-    // Equity chart
     drawEquityChart(s.dailySnapshots, s.startCash);
+
+    // HEAT MAP — only assets currently held, size = capital weight, color = pnl direction
+    const holdingsEntries = Object.entries(s.holdings || {});
+    const heatEl = document.getElementById('heatmap');
+    if (!holdingsEntries.length) {
+      heatEl.innerHTML = '<div class="heat-empty">Inga öppna positioner just nu</div>';
+    } else {
+      const positionsWithValue = holdingsEntries.map(([id,h]) => {
+        const asset = s.assets.find(a=>a.id===id);
+        const price = s.prices[id] || h.avgCost;
+        const value = price * h.qty;
+        const pnlPct = ((price - h.avgCost)/h.avgCost)*100;
+        return { id, asset, value, pnlPct };
+      });
+      const maxVal = Math.max(...positionsWithValue.map(p=>p.value));
+      heatEl.innerHTML = positionsWithValue.map(p => {
+        const sizePx = 90 + (p.value/maxVal)*90; // 90-180px based on relative weight
+        const color = p.pnlPct >= 0 ? '#00ffb3' : '#ff3860';
+        return `<div class="heat-tile" style="width:${sizePx}px;height:${sizePx}px;background:${color}12;border-color:${color}50">
+          <span class="heat-sym" style="color:${p.asset?.color||'#fff'}">${p.id}</span>
+          <span class="heat-pct" style="color:${color}">${p.pnlPct>=0?'+':''}${p.pnlPct.toFixed(1)}%</span>
+        </div>`;
+      }).join('');
+    }
+
+    // DONUT — allocation breakdown (cash + each held asset)
+    const donutColors = ['#00e5ff','#b166ff','#00ffb3','#ffb703','#ff3860','#627EEA','#F7931A'];
+    const segments = [{ label:'Kassa', value: s.cash, color: '#2e3f5c' }];
+    holdingsEntries.forEach(([id,h],i) => {
+      const price = s.prices[id] || h.avgCost;
+      segments.push({ label:id, value: price*h.qty, color: donutColors[i%donutColors.length] });
+    });
+    drawDonut(segments);
+    document.getElementById('donut-legend').innerHTML = segments.map(seg => {
+      const pct = (seg.value/s.totalVal*100).toFixed(0);
+      return `<div class="legend-item"><span class="legend-dot" style="background:${seg.color}"></span><span class="legend-label">${seg.label}</span><span class="legend-val">${pct}%</span></div>`;
+    }).join('');
 
     // Market list
     document.getElementById('market').innerHTML = s.assets.map(a => {
@@ -333,11 +530,12 @@ async function refresh() {
       const chg = ((price-first)/first*100);
       const held = s.holdings[a.id];
       const sig = s.signals[a.id];
-      const sigColor = sig==='BUY'?'#00ffb3':(sig==='SELL'||sig==='STOPLOSS')?'#ff3860':'#7a8fb5';
+      const ns = (s.newsStatus||{})[a.id];
+      const sigColor = sig==='BUY'?'#00ffb3':(sig==='SELL'||sig==='STOPLOSS')?'#ff3860':sig==='VETO'?'#ffb703':'#7a8fb5';
       const sigDisplay = sig==='STOPLOSS'?'SL':sig;
       return `<div class="market-row">
         <div class="mkt-name">
-          <div class="mkt-icon" style="background:${a.color}20;color:${a.color}">${a.id[0]}</div>
+          <div class="mkt-icon" style="background:${a.color}20;color:${a.color}">${a.id[0]}${ns&&ns.blocked?'<span class="veto-dot" title="Nyhetsveto aktivt"></span>':''}</div>
           <div><div class="mkt-sym">${a.id} ${held?'<span style="color:'+a.color+';font-size:9px">●</span>':''}</div><div class="mkt-full">${a.name}</div></div>
         </div>
         <div style="text-align:right">
@@ -361,7 +559,7 @@ async function refresh() {
     }).join('') || '<div class="empty">Inga trades ännu — boten letar efter köpsignal</div>';
 
     // Log
-    const colors = {buy:'#00ffb3','sell-win':'#00ffb3','sell-loss':'#ff3860',system:'#00e5ff',error:'#ff3860',info:'#7a8fb5'};
+    const colors = {buy:'#00ffb3','sell-win':'#00ffb3','sell-loss':'#ff3860',system:'#00e5ff',error:'#ff3860',veto:'#ffb703',info:'#7a8fb5'};
     document.getElementById('terminal').innerHTML = s.logs.map(l =>
       `<div class="log-row"><span class="log-ts">${l.ts}</span><span style="color:${colors[l.type]||'#7a8fb5'}">${l.msg}</span></div>`
     ).join('');
@@ -370,18 +568,8 @@ async function refresh() {
   }
 }
 
-async function toggleBot() {
-  await fetch('/api/toggle', {method:'POST'});
-  refresh();
-}
-async function resetBot() {
-  if (!confirm('Återställ boten? All historik försvinner.')) return;
-  await fetch('/api/reset', {method:'POST'});
-  refresh();
-}
-
 refresh();
-setInterval(refresh, 3000);
+setInterval(refresh, 10000);
 window.addEventListener('resize', refresh);
 </script>
 </body>
