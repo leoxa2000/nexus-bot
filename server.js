@@ -598,8 +598,10 @@ app.post('/api/toggle', express.json(), (req, res) => {
 });
 
 app.post('/api/reset', express.json(), (req, res) => {
-  state.cash = 1000;
-  state.startCash = 1000;
+  const requested = parseFloat(req.body?.startCash);
+  const newStartCash = (requested && requested > 0) ? requested : 1000;
+  state.cash = newStartCash;
+  state.startCash = newStartCash;
   state.holdings = {};
   state.trades = [];
   state.realizedPnl = 0;
@@ -610,11 +612,11 @@ app.post('/api/reset', express.json(), (req, res) => {
   state.startedAt = Date.now();
   state.testStartDate = new Date().toISOString().slice(0,10);
   state.dailySnapshots = [];
-  state.highWaterMark = 1000;
+  state.highWaterMark = newStartCash;
   state.haltedByKillSwitch = false;
-  log('Bot återställd — ny testperiod startad', 'system');
+  log(`Bot återställd — nytt startkapital: ${newStartCash} kr`, 'system');
   saveState();
-  res.json({ ok: true });
+  res.json({ ok: true, startCash: newStartCash });
 });
 
 // Uppdatera reglagen: kapital/trade, vinstmål, nödbroms-gräns
