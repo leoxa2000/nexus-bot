@@ -106,7 +106,7 @@ async function fetchPrices() {
     if (res.status === 429) {
       consecutiveFailures++;
       log(`⚠ CoinGecko: för många förfrågningar (429). Väntar längre nästa gång.`, 'error');
-      return;
+      return false;
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
@@ -123,9 +123,11 @@ async function fetchPrices() {
       }
     });
     lastPriceUpdate = Date.now();
+    return true;
   } catch (e) {
     consecutiveFailures++;
     log(`⚠ Prisfetch misslyckades: ${e.message}`, 'error');
+    return false;
   }
 }
 
@@ -462,10 +464,27 @@ function getVerdict() {
 // ═══════════════════════════════════════════════════════
 // INTERVALS
 // ═══════════════════════════════════════════════════════
-setInterval(fetchPrices, 15000);              // every 15 sec — mer reaktiv, fortfarande säkert för CoinGecko gratis-gräns
-setInterval(botTick, 15000);                  // check for trades every 15 sec
-setInterval(checkDailySnapshot, 60000 * 10);  // check every 10 min if a new day has started
-setInterval(newsCheckCycle, 60000 * 20);      // nyhetscheck: en tillgång var 20:e minut (håller oss inom gratis-gränser + Claude-budget)
+// ═══════════════════════════════════════════════════════
+// SMART SCHEDULING — väntar längre vid fel (backoff), snabbare när allt fungerar
+// Detta ersätter fasta setInterval-anrop som annars kraschar mot CoinGeckos gräns
+// ═══════════════════════════════════════════════════════
+const BASE_DELAY = 30000;      // normal takt: var 30:e sekund
+const MAX_DELAY = 300000;      // vid upprepade fel: vänta som mest 5 minuter
+let currentDelay = BASE_DELAY;
+
+async function scheduleLoop() {
+  const success = await fetchPrices();
+
+  if (success) {
+    currentDelay = BASE_DELAY;   // allt funkar — gå tillbaka till normal takt
+    botTick();                   // bara kolla trades när vi faktiskt fick färsk data
+  } else {
+    currentDelay = Math.min(currentDelay * 2, MAX_DELAY); // fördubbla väntetiden vid fel, upp till taket
+    log(`⏳ Väntar ${Math.round(currentDelay/1000)}s innan nästa försök`, 'system');
+  }
+
+  setTimeout(scheduleLoop, currentDelay);
+}
 
 fetchPrices().then(() => {
   log('✓ NEXUS bot startad — hämtar riktiga priser från CoinGecko', 'system');
@@ -476,6 +495,7 @@ fetchPrices().then(() => {
   } else {
     log('⚠️ Nyhetsveto: inga API-nycklar konfigurerade i Railway Variables ännu', 'system');
   }
+  setTimeout(scheduleLoop, currentDelay); // starta den självjusterande prisloopen
 });
 
 // ═══════════════════════════════════════════════════════
