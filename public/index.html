@@ -1,649 +1,724 @@
-// ═══════════════════════════════════════════════════════
-// NEXUS BOT — Server som kör dygnet runt
-// Hämtar riktiga priser från CoinGecko + paper-trading + nyhetsveto
-// ═══════════════════════════════════════════════════════
-
-const express = require('express');
-const fetch = require('node-fetch');
-const fs = require('fs');
-const path = require('path');
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// ── API-NYCKLAR (läses från Railway Variables, ALDRIG hårdkodade här) ──
-const CRYPTOPANIC_KEY = process.env.CRYPTOPANIC_API_KEY || '';
-const ALPHAVANTAGE_KEY = process.env.ALPHA_VANTAGE_API_KEY || '';
-const CLAUDE_KEY = process.env.ANTHROPIC_API_KEY || '';
-
-// ── STATE (bot memory) ──
-// VIKTIGT: sparas i /app/data/ som är en Railway Volume (permanent lagring)
-// Utan detta skulle all data (trades, dagar, kassa) försvinna varje gång koden uppdateras
-const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-const STATE_FILE = path.join(DATA_DIR, 'state.json');
-
-let state = {
-  cash: 1000,
-  startCash: 1000,
-  holdings: {},        // { BTC: {qty, avgCost}, ... }
-  trades: [],          // all trades
-  priceHistory: {},    // last 60 prices per asset
-  botOn: true,         // bot starts automatically
-  cfg: {
-    takeProfit: 0.6,     // % vinstmål — INSTÄLLNINGSBAR av användaren
-    tradeSize: 8,        // % av kassan per trade — INSTÄLLNINGSBAR
-    stopLoss: 1.5,       // % stop loss per enskild trade (fast just nu)
-    killSwitchPct: 20    // % nedgång från högsta värde innan NÖDBROMS — INSTÄLLNINGSBAR
-  },
-  lastTradeAt: {},
-  realizedPnl: 0,
-  bestTrade: null,
-  worstTrade: null,
-  winStreak: 0,
-  lossStreak: 0,
-  startedAt: Date.now(),
-  testDurationDays: 14,
-  testStartDate: new Date().toISOString().slice(0,10),
-  dailySnapshots: [],
-  // Nödbroms
-  highWaterMark: 1000,      // högsta kontovärde någonsin nått — nödbromsen mäts mot detta
-  haltedByKillSwitch: false,
-  // Nyhetsveto
-  newsVetoEnabled: true,
-  newsStatus: {},           // { BTC: {sentiment, blocked, headline, ts} }
-  claudeCallsToday: 0,
-  claudeCallsDate: new Date().toISOString().slice(0,10),
-  maxClaudeCallsPerDay: 40  // utgiftsspärr — max Claude-anrop per dygn
-};
-
-// Load saved state if it exists
-if (fs.existsSync(STATE_FILE)) {
-  try {
-    const loaded = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-    state = { ...state, ...loaded, cfg: { ...state.cfg, ...(loaded.cfg||{}) } };
-    console.log('✓ Loaded saved state');
-  } catch (e) { console.log('⚠ Could not load state, starting fresh'); }
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEXUS — Live</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#050810;--panel:rgba(13,20,38,.75);--card:rgba(18,27,48,.7);--border:rgba(0,229,255,.12);
+  --cyan:#00e5ff;--violet:#b166ff;--green:#00ffb3;--red:#ff3860;--amber:#ffb703;
+  --text:#E8F4FF;--t2:#7a8fb5;--t3:#2e3f5c;
+  --mono:'JetBrains Mono',monospace;--sans:'Space Grotesk',sans-serif;
 }
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%;background:var(--bg);color:var(--text);font-family:var(--sans)}
+body{overflow-y:auto}
+.bg-grid{position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:linear-gradient(rgba(0,229,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,255,.03) 1px,transparent 1px);
+  background-size:48px 48px;
+  -webkit-mask-image:radial-gradient(ellipse 80% 60% at 50% 0%,black 40%,transparent 100%);}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes glowText{0%,100%{text-shadow:0 0 20px currentColor}50%{text-shadow:0 0 34px currentColor}}
+.wrap{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:24px 20px 60px}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 
-function saveState() {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px}
+.brand{display:flex;align-items:center;gap:12px}
+.orb{width:46px;height:56px;border-radius:14px;background:radial-gradient(circle at 50% 30%,#0d1e33,#050810 75%);display:flex;align-items:center;justify-content:center;box-shadow:0 0 16px 2px rgba(0,229,255,.35);overflow:hidden;position:relative}
+.orb svg{width:100%;height:100%}
+.orb-node{animation:nodeGlow 2.8s ease-in-out infinite}
+.orb-node:nth-child(3n){animation-delay:.5s}
+.orb-node:nth-child(3n+1){animation-delay:1s}
+@keyframes nodeGlow{0%,100%{opacity:.45}50%{opacity:1}}
+.brand-name{font-weight:700;font-size:16px;letter-spacing:1px}
+.brand-name .a{color:var(--cyan)}
+.brand-sub{font-size:9px;color:var(--t3);letter-spacing:1px;font-family:var(--mono)}
+.badge{font-size:9px;padding:5px 12px;border-radius:20px;font-weight:700;letter-spacing:.6px;border:1px solid;font-family:var(--mono)}
+.badge.green{color:var(--green);border-color:var(--green);background:rgba(0,255,179,.12)}
+.badge.red{color:var(--red);border-color:var(--red);background:rgba(255,56,96,.12)}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
+.btn{padding:8px 16px;border-radius:8px;font-size:12px;font-weight:700;border:1px solid var(--border);background:rgba(0,0,0,.2);color:var(--t2);cursor:pointer;font-family:var(--sans)}
+.btn.primary{background:linear-gradient(135deg,var(--cyan),#00a8c0);color:#020509;border:none}
+.btn.danger{background:rgba(255,56,96,.15);color:var(--red);border-color:var(--red)}
+.btn.ghost{background:transparent}
+
+.verdict{border-radius:18px;padding:22px 26px;margin-bottom:16px;display:flex;align-items:center;gap:20px;border:1.5px solid}
+.verdict.cyan{background:rgba(0,229,255,.06);border-color:rgba(0,229,255,.3)}
+.verdict.green{background:rgba(0,255,179,.06);border-color:rgba(0,255,179,.3)}
+.verdict.amber{background:rgba(255,183,3,.06);border-color:rgba(255,183,3,.3)}
+.verdict.red{background:rgba(255,56,96,.06);border-color:rgba(255,56,96,.3);animation:pulse 2s infinite}
+.verdict-icon{font-size:44px;flex-shrink:0}
+.verdict-title{font-size:19px;font-weight:700;margin-bottom:4px}
+.verdict-title.cyan{color:var(--cyan)}.verdict-title.green{color:var(--green)}.verdict-title.amber{color:var(--amber)}.verdict-title.red{color:var(--red)}
+.verdict-text{font-size:13px;color:var(--t2);line-height:1.5}
+
+.progress-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px 22px;margin-bottom:16px}
+.progress-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+.progress-label{font-size:11px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono)}
+.progress-days{font-size:15px;font-weight:700;font-family:var(--mono)}
+.progress-days .highlight{color:var(--cyan)}
+.progress-track{height:10px;background:rgba(0,0,0,.3);border-radius:6px;overflow:hidden;border:1px solid var(--border)}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--cyan),var(--violet));border-radius:6px;transition:width .5s}
+.progress-sub{font-size:11px;color:var(--t3);margin-top:8px}
+
+.metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.metric-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px}
+.metric-label{font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;font-family:var(--mono)}
+.metric-val{font-size:26px;font-weight:700;font-family:var(--mono);line-height:1}
+.metric-val.up{color:var(--green)}
+.metric-val.down{color:var(--red)}
+.metric-sub{font-size:11px;color:var(--t2);margin-top:4px}
+
+/* Settings panel */
+.settings-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px 22px;margin-bottom:16px}
+.settings-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;cursor:pointer}
+.settings-title{font-size:12px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);font-weight:600}
+.settings-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.slider-box{background:rgba(0,0,0,.2);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+.slider-label{display:flex;justify-content:space-between;font-size:11px;color:var(--t2);margin-bottom:8px;font-family:var(--mono)}
+.slider-val{font-weight:700;color:var(--cyan)}
+input[type=range]{width:100%;height:3px;-webkit-appearance:none;background:var(--border);border-radius:2px;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--cyan);cursor:pointer;box-shadow:0 0 8px var(--cyan)}
+.slider-range{display:flex;justify-content:space-between;font-size:9px;color:var(--t3);margin-top:4px;font-family:var(--mono)}
+.save-cfg-btn{margin-top:14px;width:100%;padding:10px;background:linear-gradient(135deg,var(--cyan),#00a8c0);border:none;border-radius:9px;color:#020509;font-weight:700;font-size:12px;cursor:pointer;font-family:var(--sans)}
+
+/* Kill switch banner */
+.killswitch-banner{background:rgba(255,56,96,.12);border:1.5px solid var(--red);border-radius:16px;padding:18px 22px;margin-bottom:16px;display:flex;align-items:center;gap:16px;animation:pulse 1.5s infinite}
+.killswitch-icon{font-size:36px}
+.killswitch-title{font-size:16px;font-weight:700;color:var(--red)}
+.killswitch-text{font-size:12px;color:var(--t2);margin-top:4px}
+
+/* Heat map + donut row */
+.overview-grid{display:grid;grid-template-columns:0.9fr 1.4fr 0.8fr;gap:16px;margin-bottom:16px}
+.panel{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden;margin-bottom:16px}
+.panel-hdr{padding:12px 18px;font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1.5px;font-weight:600;border-bottom:1px solid var(--border);font-family:var(--mono);display:flex;justify-content:space-between}
+.heatmap-body{padding:16px;display:flex;flex-wrap:wrap;gap:10px;min-height:100px;align-content:flex-start}
+.heat-tile{border-radius:12px;padding:14px;display:flex;flex-direction:column;justify-content:space-between;border:1.5px solid;transition:transform .15s}
+.heat-tile:hover{transform:scale(1.03)}
+.heat-sym{font-weight:700;font-family:var(--mono)}
+.heat-pct{font-size:20px;font-weight:800;font-family:var(--mono);margin-top:6px}
+.heat-empty{padding:30px;text-align:center;color:var(--t3);font-size:12px;width:100%}
+
+.donut-wrap{padding:16px;display:flex;align-items:center;gap:16px}
+.donut-legend{flex:1;display:flex;flex-direction:column;gap:6px}
+.legend-item{display:flex;align-items:center;gap:8px;font-size:11px}
+.legend-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+.legend-label{flex:1;color:var(--t2)}
+.legend-val{font-family:var(--mono);font-weight:600}
+
+.tv-symbol-row{display:flex;gap:6px;padding:10px 12px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.tv-symbol-btn{padding:5px 11px;border-radius:8px;font-size:11px;font-weight:700;font-family:var(--mono);border:1px solid var(--border);background:rgba(0,0,0,.2);color:var(--t2);cursor:pointer}
+.tv-symbol-btn.active{border-color:var(--cyan);color:var(--cyan);background:rgba(0,229,255,.1)}
+.tv-chart-container{height:360px}
+
+.chart-wrap{padding:16px 18px}
+
+.market-row{display:grid;grid-template-columns:150px 1fr 90px 60px;align-items:center;gap:10px;padding:11px 18px;border-bottom:1px solid rgba(0,229,255,.05)}
+.market-row:last-child{border-bottom:none}
+.mkt-name{display:flex;align-items:center;gap:8px}
+.mkt-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;position:relative}
+.mkt-icon .veto-dot{position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:var(--red);border:1.5px solid var(--bg)}
+.mkt-sym{font-weight:700;font-size:12px}
+.mkt-full{font-size:9px;color:var(--t3)}
+.mkt-price{font-family:var(--mono);font-weight:600;font-size:12px;text-align:right}
+.mkt-chg{font-size:10px;font-weight:600;text-align:right;font-family:var(--mono)}
+.sig-pill{font-size:9px;font-weight:700;padding:3px 7px;border-radius:20px;text-align:center;font-family:var(--mono)}
+
+.main-grid{display:grid;grid-template-columns:1fr 380px;gap:16px}
+
+.feed{max-height:220px;overflow-y:auto}
+.feed-item{display:flex;align-items:center;gap:9px;padding:9px 18px;border-bottom:1px solid rgba(0,229,255,.04);font-size:12px}
+.feed-item:last-child{border-bottom:none}
+.feed-side{width:28px;height:20px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700}
+.feed-side.buy{background:rgba(0,255,179,.15);color:var(--green)}
+.feed-side.sell{background:rgba(255,56,96,.15);color:var(--red)}
+.feed-mid{flex:1;min-width:0}
+.feed-pair{font-weight:600;font-family:var(--mono);font-size:11px}
+.feed-price{color:var(--t3);font-size:9px;font-family:var(--mono)}
+.feed-pnl{font-weight:700;font-family:var(--mono);font-size:12px;text-align:right}
+.feed-ts{font-size:9px;color:var(--t3);text-align:right;font-family:var(--mono)}
+.empty{padding:24px;text-align:center;color:var(--t3);font-size:12px}
+
+.term-body{max-height:260px;overflow-y:auto;padding:6px 0;font-family:var(--mono);font-size:10px;background:rgba(0,0,0,.25)}
+.log-row{display:flex;gap:8px;padding:3px 16px}
+.log-ts{color:var(--t3);min-width:52px;flex-shrink:0}
+
+.info-strip{background:rgba(0,229,255,.06);border:1px solid rgba(0,229,255,.2);border-radius:10px;padding:10px 16px;margin-bottom:16px;font-size:11px;color:var(--t2);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.news-badge{font-size:9px;padding:2px 8px;border-radius:10px;font-family:var(--mono);font-weight:700}
+
+@media (max-width: 900px){
+  .main-grid{grid-template-columns:1fr}
+  .metric-grid{grid-template-columns:repeat(2,1fr)}
+  .settings-grid{grid-template-columns:1fr}
+  .overview-grid{grid-template-columns:1fr}
 }
+</style>
+</head>
+<body>
+<div class="bg-grid"></div>
+<div class="wrap">
 
-// ── ASSETS (CoinGecko IDs) ──
-const ASSETS = [
-  { id: 'BTC',  name: 'Bitcoin',          color: '#F7931A' },
-  { id: 'ETH',  name: 'Ethereum',         color: '#627EEA' },
-  { id: 'SOL',  name: 'Solana',           color: '#9945FF' },
-  { id: 'XRP',  name: 'Ripple',           color: '#00AAE4' },
-  { id: 'DOGE', name: 'Dogecoin',         color: '#C2A633' },
-  { id: 'BNB',  name: 'BNB',              color: '#F3BA2F' },
-  { id: 'ADA',  name: 'Cardano',          color: '#0033AD' },
-  { id: 'DOT',  name: 'Polkadot',         color: '#E6007A' },
-  { id: 'AVAX', name: 'Avalanche',        color: '#E84142' },
-  { id: 'LTC',  name: 'Litecoin',         color: '#BFBBBB' },
-  { id: 'LINK', name: 'Chainlink',        color: '#2A5ADA' },
-  { id: 'MATIC',name: 'Polygon',          color: '#8247E5' },
-  { id: 'UNI',  name: 'Uniswap',          color: '#FF007A' },
-  { id: 'ATOM', name: 'Cosmos',           color: '#2E3148' },
-  { id: 'XLM',  name: 'Stellar',          color: '#14B6E7' },
-  { id: 'ETC',  name: 'Ethereum Classic', color: '#328332' },
-  { id: 'ALGO', name: 'Algorand',         color: '#000000' },
-  { id: 'FIL',  name: 'Filecoin',         color: '#0090FF' },
-  { id: 'APT',  name: 'Aptos',            color: '#00D4AA' },
-  { id: 'ARB',  name: 'Arbitrum',         color: '#28A0F0' },
+  <div class="topbar">
+    <div class="brand">
+      <div class="orb">
+        <svg viewBox="0 0 100 130" fill="none">
+          <defs>
+            <radialGradient id="faceGlow" cx="50%" cy="45%" r="65%">
+              <stop offset="0%" stop-color="#00e5ff" stop-opacity="0.28"/>
+              <stop offset="100%" stop-color="#00e5ff" stop-opacity="0"/>
+            </radialGradient>
+          </defs>
+          <path fill="url(#faceGlow)" d="M50,8 L78,38 L78,94 L50,122 L22,94 L22,38 Z"/>
+          <g stroke="#00e5ff" stroke-width="0.6" opacity="0.65">
+            <!-- Övre fläkt: spets till övre ring -->
+            <line x1="50" y1="8" x2="50" y2="28"/>
+            <line x1="50" y1="8" x2="78" y2="38"/>
+            <line x1="50" y1="8" x2="68" y2="53"/>
+            <line x1="50" y1="8" x2="32" y2="53"/>
+            <line x1="50" y1="8" x2="22" y2="38"/>
+            <!-- Nedre fläkt: spets till nedre ring -->
+            <line x1="50" y1="122" x2="68" y2="79"/>
+            <line x1="50" y1="122" x2="78" y2="94"/>
+            <line x1="50" y1="122" x2="50" y2="104"/>
+            <line x1="50" y1="122" x2="22" y2="94"/>
+            <line x1="50" y1="122" x2="32" y2="79"/>
+            <!-- Zigzag-kant mellan ringarna (bildar de tio kite-ytorna) -->
+            <line x1="50" y1="28" x2="68" y2="79"/>
+            <line x1="50" y1="28" x2="32" y2="79"/>
+            <line x1="78" y1="38" x2="78" y2="94"/>
+            <line x1="78" y1="38" x2="68" y2="79"/>
+            <line x1="68" y1="53" x2="50" y2="104"/>
+            <line x1="68" y1="53" x2="78" y2="94"/>
+            <line x1="32" y1="53" x2="22" y2="94"/>
+            <line x1="32" y1="53" x2="50" y2="104"/>
+            <line x1="22" y1="38" x2="32" y2="79"/>
+            <line x1="22" y1="38" x2="22" y2="94"/>
+          </g>
+          <g fill="#00e5ff">
+            <circle class="orb-node" cx="50" cy="8"   r="1.3"/>
+            <circle class="orb-node" cx="50" cy="28"  r="1.1"/>
+            <circle class="orb-node" cx="78" cy="38"  r="1.1"/>
+            <circle class="orb-node" cx="68" cy="53"  r="1.1"/>
+            <circle class="orb-node" cx="32" cy="53"  r="1.1"/>
+            <circle class="orb-node" cx="22" cy="38"  r="1.1"/>
+            <circle class="orb-node" cx="68" cy="79"  r="1.1"/>
+            <circle class="orb-node" cx="78" cy="94"  r="1.1"/>
+            <circle class="orb-node" cx="50" cy="104" r="1.1"/>
+            <circle class="orb-node" cx="22" cy="94"  r="1.1"/>
+            <circle class="orb-node" cx="32" cy="79"  r="1.1"/>
+            <circle class="orb-node" cx="50" cy="122" r="1.3"/>
+          </g>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-name">NEX<span class="a">US</span></div>
+        <div class="brand-sub">LIVE · RIKTIGA PRISER · PAPER TRADING</div>
+      </div>
+    </div>
+    <div class="controls">
+      <span id="bot-badge"><span class="badge red">OFFLINE</span></span>
+      <button class="btn primary" id="toggle-btn" onclick="toggleBot()">▶ Starta</button>
+      <button class="btn ghost" id="news-btn" onclick="toggleNews()">🛡️ Nyhetsveto: PÅ</button>
+      <button class="btn danger" onclick="resetBot()">↻ Återställ</button>
+    </div>
+  </div>
+
+  <div class="info-strip">
+    <span>📡</span><span>Priser var 15:e sek · Dashboard var 10:e sek</span>
+    <span id="news-status-strip" style="margin-left:auto"></span>
+  </div>
+
+  <!-- KILL SWITCH BANNER (only shown if triggered) -->
+  <div class="killswitch-banner" id="killswitch-banner" style="display:none">
+    <div class="killswitch-icon">🛑</div>
+    <div>
+      <div class="killswitch-title">NÖDBROMS AKTIVERAD</div>
+      <div class="killswitch-text" id="killswitch-text">Kontot föll för mycket från sin topp. Boten är stoppad tills du granskat läget.</div>
+    </div>
+  </div>
+
+  <div class="verdict" id="verdict-box">
+    <div class="verdict-icon" id="verdict-icon">🔬</div>
+    <div>
+      <div class="verdict-title" id="verdict-title">Samlar data...</div>
+      <div class="verdict-text" id="verdict-text">Ansluter till servern...</div>
+    </div>
+  </div>
+
+  <div class="progress-card">
+    <div class="progress-top">
+      <span class="progress-label">Testperiod (Fas 3)</span>
+      <span class="progress-days" id="progress-days">Dag — av —</span>
+    </div>
+    <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+    <div class="progress-sub" id="progress-sub">Boten samlar data för att avgöra om strategin fungerar innan riktiga pengar sätts in.</div>
+  </div>
+
+  <!-- SETTINGS: the three sliders the user controls -->
+  <div class="settings-card">
+    <div class="settings-hdr" onclick="toggleSettings()">
+      <span class="settings-title">⚙ Inställningar — dina reglage</span>
+      <span id="settings-chevron" style="color:var(--t3)">▼</span>
+    </div>
+    <div id="settings-body">
+      <div class="settings-grid">
+        <div class="slider-box">
+          <div class="slider-label"><span>Kapital per trade</span><span class="slider-val" id="tradeSize-val">8%</span></div>
+          <input type="range" min="1" max="50" step="1" value="8" id="tradeSize-slider" oninput="document.getElementById('tradeSize-val').textContent=this.value+'%'">
+          <div class="slider-range"><span>1%</span><span>Andel av kassan som satsas per köp</span><span>50%</span></div>
+        </div>
+        <div class="slider-box">
+          <div class="slider-label"><span>Vinstmål per trade</span><span class="slider-val" id="takeProfit-val">0.6%</span></div>
+          <input type="range" min="0.1" max="10" step="0.1" value="0.6" id="takeProfit-slider" oninput="document.getElementById('takeProfit-val').textContent=this.value+'%'">
+          <div class="slider-range"><span>0.1%</span><span>Säljer när priset stigit så här mycket</span><span>10%</span></div>
+        </div>
+        <div class="slider-box">
+          <div class="slider-label"><span>Nödbroms</span><span class="slider-val" id="killSwitchPct-val">20%</span></div>
+          <input type="range" min="5" max="50" step="1" value="20" id="killSwitchPct-slider" oninput="document.getElementById('killSwitchPct-val').textContent=this.value+'%'">
+          <div class="slider-range"><span>5%</span><span>Stoppar boten vid nedgång från toppen</span><span>50%</span></div>
+        </div>
+      </div>
+      <button class="save-cfg-btn" onclick="saveConfig()">💾 Spara inställningar</button>
+    </div>
+  </div>
+
+  <div class="metric-grid">
+    <div class="metric-card">
+      <div class="metric-label">Totalt Kontovärde</div>
+      <div class="metric-val" id="total">— kr</div>
+      <div class="metric-sub" id="change">—</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Kassa / Investerat</div>
+      <div class="metric-val" style="font-size:18px" id="cash">—</div>
+      <div class="metric-sub" id="invested">—</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Trades / Träffsäkerhet</div>
+      <div class="metric-val" style="font-size:18px" id="trades-count">0</div>
+      <div class="metric-sub" id="winrate">—</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Uptime</div>
+      <div class="metric-val" style="font-size:18px" id="uptime">—</div>
+      <div class="metric-sub" id="realized">—</div>
+    </div>
+  </div>
+
+  <!-- HEAT MAP + DONUT -->
+  <div class="overview-grid">
+    <div class="panel" style="margin-bottom:0">
+      <div class="panel-hdr"><span>Heat Map — dina positioner</span></div>
+      <div class="heatmap-body" id="heatmap"><div class="heat-empty">Inga öppna positioner just nu</div></div>
+    </div>
+    <div class="panel" style="margin-bottom:0">
+      <div class="panel-hdr"><span>Marknadsdiagram — TradingView</span></div>
+      <div class="tv-symbol-row" id="tv-symbol-row"></div>
+      <div class="tv-chart-container" id="tv_chart_container"></div>
+    </div>
+    <div class="panel" style="margin-bottom:0">
+      <div class="panel-hdr"><span>Fördelning</span></div>
+      <div class="donut-wrap">
+        <canvas id="donut-canvas" width="120" height="120"></canvas>
+        <div class="donut-legend" id="donut-legend"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main-grid">
+    <div class="left-col">
+      <div class="panel">
+        <div class="panel-hdr"><span>Kapitalkurva — dag för dag</span></div>
+        <div class="chart-wrap"><canvas id="equity-canvas" style="width:100%;height:160px"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-hdr"><span>Marknad — Live-priser</span></div>
+        <div id="market"><div class="empty">Ansluter...</div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-hdr"><span>Live Trades</span><span id="feed-count">0 trades</span></div>
+        <div class="feed" id="feed"></div>
+      </div>
+    </div>
+    <div class="right-col">
+      <div class="panel">
+        <div class="panel-hdr"><span>Aktivitetslogg</span></div>
+        <div class="term-body" id="terminal"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://s3.tradingview.com/tv.js" onerror="tvScriptFailed()"></script>
+<script>
+// ═══════════════════════════════════════════════════════
+// TRADINGVIEW-DIAGRAM — gratis widget, ingen egen kod för candlesticks behövs
+// Byt symbol med knapparna, tidsintervall/indikatorer väljs inne i själva diagrammet
+// ═══════════════════════════════════════════════════════
+const TV_SYMBOLS = [
+  { id:'BTC',  tv:'BINANCE:BTCUSDT' },
+  { id:'ETH',  tv:'BINANCE:ETHUSDT' },
+  { id:'SOL',  tv:'BINANCE:SOLUSDT' },
+  { id:'XRP',  tv:'BINANCE:XRPUSDT' },
+  { id:'DOGE', tv:'BINANCE:DOGEUSDT' },
+  { id:'BNB',  tv:'BINANCE:BNBUSDT' },
+  { id:'ADA',  tv:'BINANCE:ADAUSDT' },
+  { id:'DOT',  tv:'BINANCE:DOTUSDT' },
+  { id:'AVAX', tv:'BINANCE:AVAXUSDT' },
+  { id:'LTC',  tv:'BINANCE:LTCUSDT' },
+  { id:'LINK', tv:'BINANCE:LINKUSDT' },
+  { id:'MATIC',tv:'BINANCE:MATICUSDT' },
+  { id:'UNI',  tv:'BINANCE:UNIUSDT' },
+  { id:'ATOM', tv:'BINANCE:ATOMUSDT' },
+  { id:'XLM',  tv:'BINANCE:XLMUSDT' },
+  { id:'ETC',  tv:'BINANCE:ETCUSDT' },
+  { id:'ALGO', tv:'BINANCE:ALGOUSDT' },
+  { id:'FIL',  tv:'BINANCE:FILUSDT' },
+  { id:'APT',  tv:'BINANCE:APTUSDT' },
+  { id:'ARB',  tv:'BINANCE:ARBUSDT' },
 ];
+let currentTvSymbol = 'BTC';
 
-let currentPrices = {};
-let lastPriceUpdate = 0;
-let logLines = [];
-let consecutiveFailures = 0;
-let newsCheckIdx = 0;
-
-function log(msg, type='info') {
-  const ts = new Date().toISOString().slice(11,19);
-  const line = { ts, msg, type };
-  logLines.unshift(line);
-  if (logLines.length > 200) logLines.length = 200;
-  console.log(`[${ts}] ${msg}`);
+function tvScriptFailed() {
+  const c = document.getElementById('tv_chart_container');
+  if (c) c.innerHTML = '<div style="padding:30px;text-align:center;color:var(--t3);font-size:12px">⚠ Diagrammet kunde inte laddas — troligen blockerat av en annonsblockerare i webbläsaren. Prova att stänga av den för denna sida, eller öppna i en annan webbläsare.</div>';
 }
 
-// ═══════════════════════════════════════════════════════
-// FETCH REAL PRICES FROM COINGECKO (free, no API key needed)
-// ═══════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════
-// USD/SEK VÄXELKURS — hämtas sällan (kursen rör sig knappt inom en dag)
-// Håller oss borta helt från gränser eftersom det bara är 1 anrop/timme
-// ═══════════════════════════════════════════════════════
-let usdSekRate = 10.5; // rimligt startvärde tills första hämtningen lyckas
-async function fetchUsdSekRate() {
+function loadTVChart(symbolId) {
+  if (typeof TradingView === 'undefined') { tvScriptFailed(); return; }
+  currentTvSymbol = symbolId;
+  const sym = TV_SYMBOLS.find(s => s.id === symbolId);
+  document.getElementById('tv_chart_container').innerHTML = '';
   try {
-    const res = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (data.rates && data.rates.SEK) {
-      usdSekRate = data.rates.SEK;
-      log(`💱 USD/SEK-kurs uppdaterad: ${usdSekRate.toFixed(3)}`, 'system');
-    }
-  } catch (e) {
-    log(`⚠ Kunde inte uppdatera USD/SEK-kurs, använder senaste kända värde (${usdSekRate})`, 'error');
-  }
-}
-
-// ═══════════════════════════════════════════════════════
-// FETCH REAL PRICES FROM COINBASE (gratis, ingen nyckel, stor etablerad börs
-// — hämtar en tillgång i taget parallellt, så att om t.ex. BNB saknas
-// påverkar det inte de andra 5 tillgångarna)
-// ═══════════════════════════════════════════════════════
-async function fetchPrices() {
-  const results = await Promise.allSettled(
-    ASSETS.map(a => fetch(`https://api.coinbase.com/v2/prices/${a.id}-USD/spot`).then(async res => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      const priceUsd = parseFloat(json.data?.amount);
-      if (!priceUsd) throw new Error('inget pris i svaret');
-      return { id: a.id, priceUsd };
-    }))
-  );
-
-  let successCount = 0;
-  results.forEach((r, i) => {
-    const asset = ASSETS[i];
-    if (r.status === 'fulfilled') {
-      successCount++;
-      const priceSek = r.value.priceUsd * usdSekRate;
-      currentPrices[asset.id] = priceSek;
-      if (!state.priceHistory[asset.id]) state.priceHistory[asset.id] = [];
-      state.priceHistory[asset.id].push(priceSek);
-      if (state.priceHistory[asset.id].length > 60) state.priceHistory[asset.id].shift();
-    } else {
-      // En enskild tillgång kan sakna stöd hos Coinbase (t.ex. BNB) — logga men fortsätt med resten
-      if (consecutiveFailures === 0) log(`⚠ ${asset.id}: ${r.reason.message}`, 'error');
-    }
-  });
-
-  if (successCount === 0) {
-    consecutiveFailures++;
-    log(`⚠ Prisfetch misslyckades helt (0/${ASSETS.length} tillgångar)`, 'error');
-    return false;
-  }
-  consecutiveFailures = 0;
-  lastPriceUpdate = Date.now();
-  return true;
-}
-
-// ═══════════════════════════════════════════════════════
-// TECHNICAL SIGNALS
-// ═══════════════════════════════════════════════════════
-function computeRSI(hist, period=7) {
-  if (hist.length < period+1) return 50;
-  const recent = hist.slice(-period-1);
-  let gains=0, losses=0;
-  for (let i=1; i<recent.length; i++) {
-    const d = recent[i]-recent[i-1];
-    if (d>0) gains+=d; else losses-=d;
-  }
-  const avgG = gains/period, avgL = losses/period;
-  if (avgL === 0) return 100;
-  return 100 - (100/(1 + avgG/avgL));
-}
-
-// Wraps the pure technical signal with the news veto layer
-function getSignal(assetId) {
-  const hist = state.priceHistory[assetId];
-  if (!hist || hist.length < 8) return 'HOLD';
-  const price = currentPrices[assetId];
-  const recent = hist.slice(-8); // kortare minne = känsligare för små, snabba rörelser (mer likt demot)
-  const min = Math.min(...recent), max = Math.max(...recent), range = max-min || 1;
-  const posInRange = (price-min)/range;
-  const rsi = computeRSI(hist);
-  const held = state.holdings[assetId];
-
-  let signal = 'HOLD';
-  if (!held) {
-    if (posInRange < 0.45 || rsi < 45) signal = 'BUY';
-  } else {
-    const profitTarget = price > held.avgCost * (1 + state.cfg.takeProfit/100);
-    const stopLoss = price < held.avgCost * (1 - state.cfg.stopLoss/100);
-    if (stopLoss) signal = 'STOPLOSS';
-    else if (profitTarget) signal = 'SELL';
-  }
-
-  // Nyhetsveto: blockerar bara NYA köp, tvingar aldrig fram en panik-sälj av befintliga innehav
-  if (signal === 'BUY' && state.newsVetoEnabled) {
-    const ns = state.newsStatus[assetId];
-    if (ns && ns.blocked) return 'VETO';
-  }
-  return signal;
-}
-
-// ═══════════════════════════════════════════════════════
-// NYHETSVETO — CryptoPanic + Alpha Vantage (gratis råmaterial) + Claude (tolkning)
-// Roterar en tillgång i taget, med hård utgiftsspärr för Claude-anrop
-// ═══════════════════════════════════════════════════════
-async function fetchCryptoPanicHeadlines(asset) {
-  if (!CRYPTOPANIC_KEY) return [];
-  try {
-    const url = `https://cryptopanic.com/api/v1/posts/?auth_token=${CRYPTOPANIC_KEY}&currencies=${asset.id}&public=true`;
-    const res = await fetch(url);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.results || []).slice(0,5).map(p => p.title);
-  } catch (e) {
-    log(`⚠ CryptoPanic fel för ${asset.id}: ${e.message}`, 'error');
-    return [];
-  }
-}
-
-async function fetchAlphaVantageSentiment(asset) {
-  if (!ALPHAVANTAGE_KEY) return null;
-  try {
-    const url = `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=CRYPTO:${asset.id}&apikey=${ALPHAVANTAGE_KEY}&limit=5`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const items = data.feed || [];
-    if (!items.length) return null;
-    const avgScore = items.reduce((s,i) => s + parseFloat(i.overall_sentiment_score||0), 0) / items.length;
-    return { avgScore, headlines: items.slice(0,3).map(i => i.title) };
-  } catch (e) {
-    log(`⚠ Alpha Vantage fel för ${asset.id}: ${e.message}`, 'error');
-    return null;
-  }
-}
-
-function resetClaudeCounterIfNewDay() {
-  const today = new Date().toISOString().slice(0,10);
-  if (state.claudeCallsDate !== today) {
-    state.claudeCallsDate = today;
-    state.claudeCallsToday = 0;
-  }
-}
-
-async function interpretNewsWithClaude(asset, headlines, avScore) {
-  resetClaudeCounterIfNewDay();
-  if (state.claudeCallsToday >= state.maxClaudeCallsPerDay) {
-    log(`💰 Claude-gräns nådd för idag (${state.maxClaudeCallsPerDay} anrop) — hoppar över AI-tolkning`, 'system');
-    return null;
-  }
-  if (!CLAUDE_KEY) return null;
-  if (!headlines.length) return null;
-
-  try {
-    state.claudeCallsToday++;
-    const prompt = `Analysera dessa nyhetsrubriker om ${asset.name} (${asset.id}) och bedöm om det finns TYDLIGT NEGATIVA nyheter (skandal, hack, stämning, kraftig nedgradering) som motiverar att INTE köpa just nu.\n\nRubriker:\n${headlines.map(h=>'- '+h).join('\n')}\n${avScore!=null?`\nAlpha Vantage sentiment-poäng: ${avScore.toFixed(2)} (negativ under -0.15, positiv över 0.15)`:''}\n\nSvara ENDAST med giltig JSON, inget annat: {"blocked":true|false,"sentiment":"positive"|"neutral"|"negative","headline":"sammanfattning max 12 ord"}`;
-
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': CLAUDE_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 200,
-        messages: [{ role: 'user', content: prompt }]
-      })
+    new TradingView.widget({
+      autosize: true,
+      symbol: sym.tv,
+      interval: '15',
+      timezone: 'Europe/Stockholm',
+      theme: 'dark',
+      style: '1',
+      locale: 'sv',
+      toolbar_bg: '#0D1626',
+      enable_publishing: false,
+      allow_symbol_change: false,
+      hide_side_toolbar: false,
+      container_id: 'tv_chart_container'
     });
-    const data = await res.json();
-    const txt = (data.content || []).filter(b=>b.type==='text').map(b=>b.text).join('');
-    const m = txt.match(/\{[\s\S]*?\}/);
-    if (m) return JSON.parse(m[0]);
   } catch (e) {
-    log(`⚠ Claude-tolkning misslyckades: ${e.message}`, 'error');
+    tvScriptFailed();
   }
-  return null;
+  document.querySelectorAll('.tv-symbol-btn').forEach(b => b.classList.toggle('active', b.dataset.sym === symbolId));
 }
 
-async function checkNewsForAsset(assetId) {
-  const asset = ASSETS.find(a => a.id === assetId);
-  if (!asset) return;
+function initTvSymbolButtons() {
+  const row = document.getElementById('tv-symbol-row');
+  row.innerHTML = TV_SYMBOLS.map(s =>
+    `<button class="tv-symbol-btn ${s.id===currentTvSymbol?'active':''}" data-sym="${s.id}" onclick="loadTVChart('${s.id}')">${s.id}</button>`
+  ).join('');
+}
 
-  const [headlines, avSentiment] = await Promise.all([
-    fetchCryptoPanicHeadlines(asset),
-    fetchAlphaVantageSentiment(asset)
-  ]);
-  const allHeadlines = [...headlines, ...(avSentiment?.headlines || [])];
-
-  if (!allHeadlines.length) {
-    // Inga källor konfigurerade eller inga nyheter hittades — inget veto, teknisk analys styr själv
-    if (!CRYPTOPANIC_KEY && !ALPHAVANTAGE_KEY) {
-      state.newsStatus[assetId] = { sentiment:'neutral', blocked:false, headline:'Nyhetskällor ej konfigurerade (saknar API-nycklar)', ts:new Date().toLocaleTimeString('sv-SE') };
+// Vänta lite innan vi försöker — ger tv.js tid att hinna ladda och köra sig själv
+window.addEventListener('load', () => {
+  initTvSymbolButtons();
+  setTimeout(() => {
+    if (typeof TradingView === 'undefined') {
+      tvScriptFailed();
+    } else {
+      loadTVChart('BTC');
     }
+  }, 500);
+});
+</script>
+<script>
+let settingsOpen = true;
+function toggleSettings(){
+  settingsOpen = !settingsOpen;
+  document.getElementById('settings-body').style.display = settingsOpen ? 'block' : 'none';
+  document.getElementById('settings-chevron').textContent = settingsOpen ? '▼' : '▶';
+}
+
+function fmtSEK(n, d=0) {
+  const sign = n<0?'-':'';
+  return sign + Math.abs(n).toLocaleString('sv-SE',{minimumFractionDigits:d,maximumFractionDigits:d}) + ' kr';
+}
+
+async function saveConfig(){
+  const tradeSize = document.getElementById('tradeSize-slider').value;
+  const takeProfit = document.getElementById('takeProfit-slider').value;
+  const killSwitchPct = document.getElementById('killSwitchPct-slider').value;
+  await fetch('/api/config', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ tradeSize, takeProfit, killSwitchPct })
+  });
+  refresh();
+}
+
+async function toggleBot() {
+  await fetch('/api/toggle', {method:'POST'});
+  refresh();
+}
+async function toggleNews() {
+  await fetch('/api/toggle-news', {method:'POST'});
+  refresh();
+}
+async function resetBot() {
+  const amountStr = prompt('Nytt startkapital (kr) — historik och positioner nollställs:', '1000');
+  if (amountStr === null) return; // avbrutet
+  const amount = parseFloat(amountStr);
+  if (!amount || amount <= 0) { alert('Ange ett giltigt belopp större än 0.'); return; }
+  if (!confirm(`Återställ boten med ${amount} kr som nytt startkapital? All historik försvinner.`)) return;
+  await fetch('/api/reset', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ startCash: amount })});
+  refresh();
+}
+
+function drawEquityChart(snapshots, startCash) {
+  const canvas = document.getElementById('equity-canvas');
+  const W = canvas.offsetWidth || 700, H = 160;
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,W,H);
+
+  if (!snapshots || snapshots.length < 2) {
+    ctx.fillStyle = 'rgba(255,255,255,.3)';
+    ctx.font = '12px Space Grotesk, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Väntar på fler dagar av data för att rita kurvan...', W/2, H/2);
     return;
   }
 
-  const claudeResult = await interpretNewsWithClaude(asset, allHeadlines, avSentiment?.avgScore);
+  const vals = snapshots.map(s => s.totalVal);
+  const mn = Math.min(startCash*0.9, ...vals), mx = Math.max(startCash*1.05, ...vals);
+  const rng = mx-mn || 1;
+  const pad = {t:10,r:10,b:20,l:56};
+  const cW = W-pad.l-pad.r, cH = H-pad.t-pad.b;
+  const tx = i => pad.l + (i/(vals.length-1))*cW;
+  const ty = v => pad.t + cH - ((v-mn)/rng)*cH;
 
-  let result;
-  if (claudeResult) {
-    result = claudeResult;
-  } else {
-    // Fallback: använd bara Alpha Vantage-poängen om Claude inte kunde tolka (gräns nådd eller fel)
-    const score = avSentiment?.avgScore ?? 0;
-    result = {
-      blocked: score < -0.25,
-      sentiment: score > 0.15 ? 'positive' : score < -0.15 ? 'negative' : 'neutral',
-      headline: allHeadlines[0]?.slice(0,80) || 'Ingen tydlig signal'
-    };
+  for (let i=0;i<=3;i++){
+    const y = pad.t + (cH/3)*i;
+    ctx.strokeStyle='rgba(255,255,255,.05)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(W-pad.r,y); ctx.stroke();
+    const v = mx-((mx-mn)/3)*i;
+    ctx.fillStyle='rgba(255,255,255,.3)'; ctx.font='9px JetBrains Mono, monospace'; ctx.textAlign='right';
+    ctx.fillText(Math.round(v)+' kr', pad.l-6, y+3);
   }
+  const startY = ty(startCash);
+  ctx.strokeStyle='rgba(255,255,255,.15)'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(pad.l,startY); ctx.lineTo(W-pad.r,startY); ctx.stroke(); ctx.setLineDash([]);
 
-  state.newsStatus[assetId] = { ...result, ts: new Date().toLocaleTimeString('sv-SE') };
-  if (result.blocked) {
-    log(`🛡️ VETO: ${asset.id} — nya köp blockerade — ${result.headline}`, 'veto');
-  }
-  saveState();
-}
-
-function newsCheckCycle() {
-  if (!state.newsVetoEnabled) return;
-  const asset = ASSETS[newsCheckIdx % ASSETS.length];
-  newsCheckIdx++;
-  checkNewsForAsset(asset.id).catch(e => log(`⚠ Nyhetscheck fel: ${e.message}`, 'error'));
-}
-
-// ═══════════════════════════════════════════════════════
-// NÖDBROMS — stoppar boten helt om kontot faller för mycket från sin topp
-// ═══════════════════════════════════════════════════════
-function checkKillSwitch(totalVal) {
-  if (totalVal > state.highWaterMark) state.highWaterMark = totalVal;
-  const dropPct = ((state.highWaterMark - totalVal) / state.highWaterMark) * 100;
-
-  if (!state.haltedByKillSwitch && dropPct >= state.cfg.killSwitchPct) {
-    state.botOn = false;
-    state.haltedByKillSwitch = true;
-    log(`🛑 NÖDBROMS AKTIVERAD: kontot föll ${dropPct.toFixed(1)}% från högsta värde (${state.highWaterMark.toFixed(0)} kr). Boten är stoppad — starta manuellt när du granskat läget.`, 'error');
-    saveState();
-  }
-}
-
-// ═══════════════════════════════════════════════════════
-// BOT TICK — check all assets, execute trades
-// ═══════════════════════════════════════════════════════
-function botTick() {
-  if (!state.botOn) return;
-
-  ASSETS.forEach(asset => {
-    const price = currentPrices[asset.id];
-    if (!price) return;
-
-    const lastT = state.lastTradeAt[asset.id] || 0;
-    const cooldown = 60000; // 1 min cooldown per asset — allows fairly frequent scalping without spamming trades
-    if (Date.now() - lastT < cooldown) return;
-
-    const signal = getSignal(asset.id);
-
-    if (signal === 'VETO') {
-      return; // teknisk köpsignal men nyheter blockerar — gör ingenting, ingen loggning varje gång för att undvika spam
-    }
-    if (signal === 'BUY') {
-      const usd = state.cash * (state.cfg.tradeSize/100);
-      if (usd < 10 || usd > state.cash) return;
-      const qty = usd / price;
-      state.cash -= usd;
-      const cur = state.holdings[asset.id] || { qty:0, avgCost:0 };
-      const nq = cur.qty + qty;
-      const na = (cur.qty*cur.avgCost + usd) / nq;
-      state.holdings[asset.id] = { qty:nq, avgCost:na };
-      state.trades.unshift({
-        id: Date.now(), side: 'BUY', assetId: asset.id, name: asset.name,
-        qty, price, usd, ts: new Date().toLocaleTimeString('sv-SE'),
-        date: new Date().toISOString().slice(0,10)
-      });
-      state.lastTradeAt[asset.id] = Date.now();
-      log(`🟢 KÖP ${asset.id} för ${usd.toFixed(0)} kr @ ${price.toFixed(0)} kr`, 'buy');
-    } else if (signal === 'SELL' || signal === 'STOPLOSS') {
-      const h = state.holdings[asset.id];
-      if (!h || h.qty <= 0) return;
-      const usd = h.qty * price;
-      const pnl = (price - h.avgCost) * h.qty;
-      state.cash += usd;
-      state.realizedPnl += pnl;
-      delete state.holdings[asset.id];
-      state.trades.unshift({
-        id: Date.now(), side: 'SÄLJ', assetId: asset.id, name: asset.name,
-        qty: h.qty, price, usd, pnl,
-        exitReason: signal === 'STOPLOSS' ? 'SL' : 'TP',
-        ts: new Date().toLocaleTimeString('sv-SE'),
-        date: new Date().toISOString().slice(0,10)
-      });
-      state.lastTradeAt[asset.id] = Date.now();
-      if (pnl > 0) { state.winStreak++; state.lossStreak = 0; }
-      else { state.lossStreak++; state.winStreak = 0; }
-      if (state.bestTrade === null || pnl > state.bestTrade) state.bestTrade = pnl;
-      if (state.worstTrade === null || pnl < state.worstTrade) state.worstTrade = pnl;
-      const emoji = signal === 'STOPLOSS' ? '🛑' : '🎯';
-      log(`${emoji} SÄLJ ${asset.id} @ ${price.toFixed(0)} kr — PnL: ${pnl>=0?'+':''}${pnl.toFixed(1)} kr`, pnl>=0?'sell-win':'sell-loss');
-    }
+  const color = vals[vals.length-1] >= startCash ? '#00ffb3' : '#ff3860';
+  ctx.beginPath();
+  vals.forEach((v,i)=>i===0?ctx.moveTo(tx(i),ty(v)):ctx.lineTo(tx(i),ty(v)));
+  ctx.lineTo(tx(vals.length-1),pad.t+cH); ctx.lineTo(pad.l,pad.t+cH); ctx.closePath();
+  const gr = ctx.createLinearGradient(0,pad.t,0,pad.t+cH);
+  gr.addColorStop(0,color+'40'); gr.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle = gr; ctx.fill();
+  ctx.beginPath();
+  vals.forEach((v,i)=>i===0?ctx.moveTo(tx(i),ty(v)):ctx.lineTo(tx(i),ty(v)));
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.lineJoin='round'; ctx.stroke();
+  vals.forEach((v,i)=>{
+    ctx.beginPath(); ctx.arc(tx(i),ty(v),3,0,Math.PI*2); ctx.fillStyle=color; ctx.fill();
   });
-
-  if (state.trades.length > 500) state.trades = state.trades.slice(0, 500);
-
-  // Nödbroms-koll efter varje tick
-  const portVal = Object.entries(state.holdings)
-    .reduce((s,[id,h]) => s + (currentPrices[id] || h.avgCost) * h.qty, 0);
-  checkKillSwitch(state.cash + portVal);
-
-  saveState();
+  ctx.fillStyle='rgba(255,255,255,.35)'; ctx.font='9px JetBrains Mono, monospace'; ctx.textAlign='left';
+  ctx.fillText(snapshots[0].date.slice(5), pad.l, H-4);
+  ctx.textAlign='right';
+  ctx.fillText(snapshots[snapshots.length-1].date.slice(5), W-pad.r, H-4);
 }
 
-// ═══════════════════════════════════════════════════════
-// DAILY SNAPSHOT — captures progress once per day for the overview chart
-// ═══════════════════════════════════════════════════════
-function checkDailySnapshot() {
-  const today = new Date().toISOString().slice(0,10);
-  const last = state.dailySnapshots[state.dailySnapshots.length - 1];
-  if (last && last.date === today) return;
-
-  const portVal = Object.entries(state.holdings)
-    .reduce((s,[id,h]) => s + (currentPrices[id] || h.avgCost) * h.qty, 0);
-  const totalVal = state.cash + portVal;
-
-  state.dailySnapshots.push({ date: today, totalVal, trades: state.trades.length });
-  if (state.dailySnapshots.length > 90) state.dailySnapshots.shift();
-  saveState();
-  log(`📅 Ny dag: ${today} — kontovärde ${totalVal.toFixed(0)} kr`, 'system');
-}
-
-// Plain-language verdict based on real results so far
-function getVerdict() {
-  const portVal = Object.entries(state.holdings)
-    .reduce((s,[id,h]) => s + (currentPrices[id] || h.avgCost) * h.qty, 0);
-  const totalVal = state.cash + portVal;
-  const pnlPct = ((totalVal - state.startCash) / state.startCash) * 100;
-  const sellTrades = state.trades.filter(t => t.pnl !== undefined);
-  const wins = sellTrades.filter(t => t.pnl > 0).length;
-  const winRate = sellTrades.length > 0 ? (wins/sellTrades.length*100) : null;
-  const daysElapsed = state.dailySnapshots.length || 1;
-
-  if (state.haltedByKillSwitch) {
-    return {
-      status: 'nödbroms',
-      icon: '🛑',
-      color: 'red',
-      title: 'NÖDBROMS AKTIVERAD',
-      text: `Kontot föll ${state.cfg.killSwitchPct}% eller mer från sitt högsta värde. Boten är stoppad tills du granskat läget och startar den manuellt igen.`
-    };
-  }
-  if (sellTrades.length < 5 || daysElapsed < 2) {
-    return {
-      status: 'samlar-data',
-      icon: '🔬',
-      color: 'cyan',
-      title: 'Samlar data',
-      text: `Boten behöver fler trades och dagar innan vi kan säga något säkert. ${sellTrades.length} avslutade trades hittills.`
-    };
-  }
-  if (pnlPct > 0 && winRate >= 55) {
-    return {
-      status: 'bra',
-      icon: '✅',
-      color: 'green',
-      title: 'Går bra',
-      text: `Kontot är upp ${pnlPct.toFixed(1)}% med ${winRate.toFixed(0)}% träffsäkerhet. Fortsätt låta den köra.`
-    };
-  }
-  if (pnlPct >= -3 && winRate >= 40) {
-    return {
-      status: 'osäkert',
-      icon: '⚠️',
-      color: 'amber',
-      title: 'Osäkert läge',
-      text: `Kontot är ${pnlPct>=0?'upp':'ner'} ${Math.abs(pnlPct).toFixed(1)}% med ${winRate.toFixed(0)}% träffsäkerhet. För tidigt att dra slutsatser — låt den fortsätta.`
-    };
-  }
-  return {
-    status: 'dåligt',
-    icon: '❌',
-    color: 'red',
-    title: 'Går dåligt',
-    text: `Kontot är ner ${Math.abs(pnlPct).toFixed(1)}% med bara ${winRate?.toFixed(0)}% träffsäkerhet. Om detta fortsätter bör strategin justeras.`
-  };
-}
-
-// ═══════════════════════════════════════════════════════
-// INTERVALS
-// ═══════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════
-// SMART SCHEDULING — väntar längre vid fel (backoff), snabbare när allt fungerar
-// Detta ersätter fasta setInterval-anrop som annars kraschar mot CoinGeckos gräns
-// ═══════════════════════════════════════════════════════
-const BASE_DELAY = 30000;      // normal takt: var 30:e sekund
-const MAX_DELAY = 300000;      // vid upprepade fel: vänta som mest 5 minuter
-let currentDelay = BASE_DELAY;
-
-async function scheduleLoop() {
-  const success = await fetchPrices();
-
-  if (success) {
-    currentDelay = BASE_DELAY;   // allt funkar — gå tillbaka till normal takt
-    botTick();                   // bara kolla trades när vi faktiskt fick färsk data
-  } else {
-    currentDelay = Math.min(currentDelay * 2, MAX_DELAY); // fördubbla väntetiden vid fel, upp till taket
-    log(`⏳ Väntar ${Math.round(currentDelay/1000)}s innan nästa försök`, 'system');
-  }
-
-  setTimeout(scheduleLoop, currentDelay);
-}
-
-setInterval(checkDailySnapshot, 60000 * 10);  // check every 10 min if a new day has started
-setInterval(newsCheckCycle, 60000 * 20);      // nyhetscheck: en tillgång var 20:e minut
-setInterval(fetchUsdSekRate, 60000 * 60);     // uppdatera USD/SEK-kurs en gång i timmen
-
-fetchUsdSekRate().then(() => fetchPrices()).then(() => {
-  log('✓ NEXUS bot startad — hämtar riktiga priser från Coinbase', 'system');
-  checkDailySnapshot();
-  if (CRYPTOPANIC_KEY || ALPHAVANTAGE_KEY) {
-    log('🛡️ Nyhetsveto aktivt — CryptoPanic/Alpha Vantage konfigurerat', 'system');
-    newsCheckCycle();
-  } else {
-    log('⚠️ Nyhetsveto: inga API-nycklar konfigurerade i Railway Variables ännu', 'system');
-  }
-  setTimeout(scheduleLoop, currentDelay); // starta den självjusterande prisloopen
-});
-
-// ═══════════════════════════════════════════════════════
-// API ENDPOINTS
-// ═══════════════════════════════════════════════════════
-app.get('/api/status', (req, res) => {
-  const portVal = Object.entries(state.holdings)
-    .reduce((s,[id,h]) => s + (currentPrices[id] || h.avgCost) * h.qty, 0);
-  const totalVal = state.cash + portVal;
-  const daysElapsed = state.dailySnapshots.length || 1;
-  const daysRemaining = Math.max(0, state.testDurationDays - daysElapsed);
-
-  res.json({
-    prices: currentPrices,
-    priceHistory: state.priceHistory,
-    holdings: state.holdings,
-    cash: state.cash,
-    startCash: state.startCash,
-    totalVal,
-    pnl: totalVal - state.startCash,
-    realizedPnl: state.realizedPnl,
-    trades: state.trades.slice(0, 100),
-    botOn: state.botOn,
-    cfg: state.cfg,
-    logs: logLines.slice(0, 60),
-    bestTrade: state.bestTrade,
-    worstTrade: state.worstTrade,
-    winStreak: state.winStreak,
-    startedAt: state.startedAt,
-    lastPriceUpdate,
-    assets: ASSETS,
-    signals: Object.fromEntries(ASSETS.map(a => [a.id, getSignal(a.id)])),
-    testDurationDays: state.testDurationDays,
-    testStartDate: state.testStartDate,
-    daysElapsed,
-    daysRemaining,
-    dailySnapshots: state.dailySnapshots,
-    verdict: getVerdict(),
-    highWaterMark: state.highWaterMark,
-    haltedByKillSwitch: state.haltedByKillSwitch,
-    newsVetoEnabled: state.newsVetoEnabled,
-    newsStatus: state.newsStatus,
-    claudeCallsToday: state.claudeCallsToday,
-    maxClaudeCallsPerDay: state.maxClaudeCallsPerDay,
-    newsConfigured: !!(CRYPTOPANIC_KEY || ALPHAVANTAGE_KEY)
+function drawDonut(segments) {
+  const canvas = document.getElementById('donut-canvas');
+  const ctx = canvas.getContext('2d');
+  const cx = 60, cy = 60, rOuter = 55, rInner = 32;
+  ctx.clearRect(0,0,120,120);
+  const total = segments.reduce((s,x)=>s+x.value,0) || 1;
+  let start = -Math.PI/2;
+  segments.forEach(seg => {
+    const angle = (seg.value/total) * Math.PI*2;
+    ctx.beginPath();
+    ctx.moveTo(cx,cy);
+    ctx.arc(cx,cy,rOuter,start,start+angle);
+    ctx.closePath();
+    ctx.fillStyle = seg.color;
+    ctx.fill();
+    start += angle;
   });
-});
+  // Hole
+  ctx.beginPath();
+  ctx.arc(cx,cy,rInner,0,Math.PI*2);
+  ctx.fillStyle = '#0D1626';
+  ctx.fill();
+}
 
-app.post('/api/toggle', express.json(), (req, res) => {
-  state.botOn = !state.botOn;
-  if (state.botOn) state.haltedByKillSwitch = false; // manuell omstart återställer nödbromsen
-  log(state.botOn ? 'Bot startad (manuellt)' : 'Bot stoppad (manuellt)', 'system');
-  saveState();
-  res.json({ botOn: state.botOn });
-});
+async function refresh() {
+  try {
+    const res = await fetch('/api/status');
+    const s = await res.json();
 
-app.post('/api/reset', express.json(), (req, res) => {
-  const requested = parseFloat(req.body?.startCash);
-  const newStartCash = (requested && requested > 0) ? requested : 1000;
-  state.cash = newStartCash;
-  state.startCash = newStartCash;
-  state.holdings = {};
-  state.trades = [];
-  state.realizedPnl = 0;
-  state.bestTrade = null;
-  state.worstTrade = null;
-  state.winStreak = 0;
-  state.lossStreak = 0;
-  state.startedAt = Date.now();
-  state.testStartDate = new Date().toISOString().slice(0,10);
-  state.dailySnapshots = [];
-  state.highWaterMark = newStartCash;
-  state.haltedByKillSwitch = false;
-  log(`Bot återställd — nytt startkapital: ${newStartCash} kr`, 'system');
-  saveState();
-  res.json({ ok: true, startCash: newStartCash });
-});
+    // Bot badge + kill switch
+    document.getElementById('bot-badge').innerHTML = s.botOn
+      ? '<span class="badge green">ONLINE</span>'
+      : '<span class="badge red">STOPPAD</span>';
+    document.getElementById('toggle-btn').textContent = s.botOn ? '⏹ Stoppa' : '▶ Starta';
+    document.getElementById('news-btn').textContent = s.newsVetoEnabled ? '🛡️ Nyhetsveto: PÅ' : '🛡️ Nyhetsveto: AV';
 
-// Uppdatera reglagen: kapital/trade, vinstmål, nödbroms-gräns
-app.post('/api/config', express.json(), (req, res) => {
-  const { tradeSize, takeProfit, killSwitchPct } = req.body;
-  if (tradeSize != null) state.cfg.tradeSize = Math.max(1, Math.min(50, parseFloat(tradeSize)));
-  if (takeProfit != null) state.cfg.takeProfit = Math.max(0.1, Math.min(10, parseFloat(takeProfit)));
-  if (killSwitchPct != null) state.cfg.killSwitchPct = Math.max(5, Math.min(50, parseFloat(killSwitchPct)));
-  log(`⚙ Inställningar uppdaterade: kapital/trade ${state.cfg.tradeSize}%, vinstmål ${state.cfg.takeProfit}%, nödbroms ${state.cfg.killSwitchPct}%`, 'system');
-  saveState();
-  res.json({ cfg: state.cfg });
-});
+    document.getElementById('killswitch-banner').style.display = s.haltedByKillSwitch ? 'flex' : 'none';
+    if (s.haltedByKillSwitch) {
+      const dropPct = ((s.highWaterMark - s.totalVal)/s.highWaterMark*100).toFixed(1);
+      document.getElementById('killswitch-text').textContent = `Kontot föll ${dropPct}% från högsta värdet (${fmtSEK(s.highWaterMark)}). Granska läget och tryck Starta när du är redo.`;
+    }
 
-app.post('/api/toggle-news', express.json(), (req, res) => {
-  state.newsVetoEnabled = !state.newsVetoEnabled;
-  log(state.newsVetoEnabled ? 'Nyhetsveto aktiverat' : 'Nyhetsveto avaktiverat', 'system');
-  saveState();
-  res.json({ newsVetoEnabled: state.newsVetoEnabled });
-});
+    // News status strip
+    const newsStrip = document.getElementById('news-status-strip');
+    if (!s.newsConfigured) {
+      newsStrip.innerHTML = '<span class="news-badge" style="color:var(--t3);background:rgba(255,255,255,.05)">🛡️ Nyhetsveto: ej konfigurerat</span>';
+    } else {
+      const blocked = Object.entries(s.newsStatus||{}).filter(([id,ns])=>ns.blocked).map(([id])=>id);
+      newsStrip.innerHTML = blocked.length
+        ? `<span class="news-badge" style="color:var(--red);background:rgba(255,56,96,.12)">🛡️ ${blocked.length} blockerad: ${blocked.join(', ')}</span>`
+        : `<span class="news-badge" style="color:var(--green);background:rgba(0,255,179,.1)">🛡️ Inga blockeringar · Claude: ${s.claudeCallsToday}/${s.maxClaudeCallsPerDay} idag</span>`;
+    }
 
-// Serve dashboard
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+    // Verdict banner
+    const v = s.verdict;
+    const box = document.getElementById('verdict-box');
+    box.className = 'verdict ' + v.color;
+    document.getElementById('verdict-icon').textContent = v.icon;
+    const titleEl = document.getElementById('verdict-title');
+    titleEl.textContent = v.title;
+    titleEl.className = 'verdict-title ' + v.color;
+    document.getElementById('verdict-text').textContent = v.text;
 
-app.use(express.static(path.join(__dirname, 'public')));
+    // Progress
+    const pct = Math.min(100, (s.daysElapsed / s.testDurationDays) * 100);
+    document.getElementById('progress-days').innerHTML = `Dag <span class="highlight">${s.daysElapsed}</span> av ${s.testDurationDays}`;
+    document.getElementById('progress-fill').style.width = pct + '%';
+    document.getElementById('progress-sub').textContent = s.daysRemaining > 0
+      ? `${s.daysRemaining} dagar kvar innan vi utvärderar om strategin är redo för riktiga pengar.`
+      : `Testperioden är klar! Dags att utvärdera resultatet tillsammans.`;
 
-app.listen(PORT, () => {
-  log(`✓ NEXUS server körs på port ${PORT}`, 'system');
-});
+    // Sync sliders with server (only if not being actively dragged — simple approach: just set on load-ish)
+    if (!window.__slidersInitialized) {
+      document.getElementById('tradeSize-slider').value = s.cfg.tradeSize;
+      document.getElementById('tradeSize-val').textContent = s.cfg.tradeSize+'%';
+      document.getElementById('takeProfit-slider').value = s.cfg.takeProfit;
+      document.getElementById('takeProfit-val').textContent = s.cfg.takeProfit+'%';
+      document.getElementById('killSwitchPct-slider').value = s.cfg.killSwitchPct;
+      document.getElementById('killSwitchPct-val').textContent = s.cfg.killSwitchPct+'%';
+      window.__slidersInitialized = true;
+    }
+
+    // Top metrics
+    const pnlPct = (s.pnl / s.startCash * 100);
+    const totalEl = document.getElementById('total');
+    totalEl.textContent = fmtSEK(s.totalVal);
+    totalEl.className = 'metric-val ' + (s.pnl>=0?'up':'down');
+    document.getElementById('change').textContent = `${s.pnl>=0?'▲':'▼'} ${s.pnl>=0?'+':''}${fmtSEK(s.pnl,1)} (${pnlPct>=0?'+':''}${pnlPct.toFixed(2)}%)`;
+    document.getElementById('cash').textContent = fmtSEK(s.cash);
+    document.getElementById('invested').textContent = 'Investerat: ' + fmtSEK(s.totalVal - s.cash);
+
+    const sellTrades = s.trades.filter(t => t.pnl !== undefined);
+    const wins = sellTrades.filter(t => t.pnl > 0).length;
+    document.getElementById('trades-count').textContent = s.trades.length + ' st';
+    document.getElementById('winrate').textContent = sellTrades.length > 0 ? Math.round(wins/sellTrades.length*100)+'% träffsäkerhet' : 'Väntar på trades';
+
+    const uptimeMs = Date.now() - s.startedAt;
+    const days = Math.floor(uptimeMs / 86400000);
+    const hrs = Math.floor((uptimeMs % 86400000) / 3600000);
+    document.getElementById('uptime').textContent = days > 0 ? `${days}d ${hrs}h` : `${hrs}h`;
+    document.getElementById('realized').textContent = 'Realiserat: ' + (s.realizedPnl>=0?'+':'') + fmtSEK(s.realizedPnl,1);
+
+    drawEquityChart(s.dailySnapshots, s.startCash);
+
+    // HEAT MAP — only assets currently held, size = capital weight, color = pnl direction
+    const holdingsEntries = Object.entries(s.holdings || {});
+    const heatEl = document.getElementById('heatmap');
+    if (!holdingsEntries.length) {
+      heatEl.innerHTML = '<div class="heat-empty">Inga öppna positioner just nu</div>';
+    } else {
+      const positionsWithValue = holdingsEntries.map(([id,h]) => {
+        const asset = s.assets.find(a=>a.id===id);
+        const price = s.prices[id] || h.avgCost;
+        const value = price * h.qty;
+        const pnlPct = ((price - h.avgCost)/h.avgCost)*100;
+        return { id, asset, value, pnlPct };
+      });
+      const maxVal = Math.max(...positionsWithValue.map(p=>p.value));
+      heatEl.innerHTML = positionsWithValue.map(p => {
+        const sizePx = 90 + (p.value/maxVal)*90; // 90-180px based on relative weight
+        const color = p.pnlPct >= 0 ? '#00ffb3' : '#ff3860';
+        return `<div class="heat-tile" style="width:${sizePx}px;height:${sizePx}px;background:${color}12;border-color:${color}50">
+          <span class="heat-sym" style="color:${p.asset?.color||'#fff'}">${p.id}</span>
+          <span class="heat-pct" style="color:${color}">${p.pnlPct>=0?'+':''}${p.pnlPct.toFixed(1)}%</span>
+        </div>`;
+      }).join('');
+    }
+
+    // DONUT — allocation breakdown (cash + each held asset)
+    const donutColors = ['#00e5ff','#b166ff','#00ffb3','#ffb703','#ff3860','#627EEA','#F7931A'];
+    const segments = [{ label:'Kassa', value: s.cash, color: '#2e3f5c' }];
+    holdingsEntries.forEach(([id,h],i) => {
+      const price = s.prices[id] || h.avgCost;
+      segments.push({ label:id, value: price*h.qty, color: donutColors[i%donutColors.length] });
+    });
+    drawDonut(segments);
+    document.getElementById('donut-legend').innerHTML = segments.map(seg => {
+      const pct = (seg.value/s.totalVal*100).toFixed(0);
+      return `<div class="legend-item"><span class="legend-dot" style="background:${seg.color}"></span><span class="legend-label">${seg.label}</span><span class="legend-val">${pct}%</span></div>`;
+    }).join('');
+
+    // Market list
+    document.getElementById('market').innerHTML = s.assets.map(a => {
+      const price = s.prices[a.id];
+      if (!price) return '';
+      const hist = s.priceHistory[a.id] || [];
+      const first = hist[0] || price;
+      const chg = ((price-first)/first*100);
+      const held = s.holdings[a.id];
+      const sig = s.signals[a.id];
+      const ns = (s.newsStatus||{})[a.id];
+      const sigColor = sig==='BUY'?'#00ffb3':(sig==='SELL'||sig==='STOPLOSS')?'#ff3860':sig==='VETO'?'#ffb703':'#7a8fb5';
+      const sigDisplay = sig==='STOPLOSS'?'SL':sig;
+      return `<div class="market-row">
+        <div class="mkt-name">
+          <div class="mkt-icon" style="background:${a.color}20;color:${a.color}">${a.id[0]}${ns&&ns.blocked?'<span class="veto-dot" title="Nyhetsveto aktivt"></span>':''}</div>
+          <div><div class="mkt-sym">${a.id} ${held?'<span style="color:'+a.color+';font-size:9px">●</span>':''}</div><div class="mkt-full">${a.name}</div></div>
+        </div>
+        <div style="text-align:right">
+          <div class="mkt-price">${price.toLocaleString('sv-SE',{maximumFractionDigits:price<10?4:0})} kr</div>
+          ${held?`<div style="font-size:10px;color:${(price-held.avgCost)>=0?'#00ffb3':'#ff3860'}">${(price-held.avgCost)>=0?'+':''}${fmtSEK((price-held.avgCost)*held.qty,1)}</div>`:''}
+        </div>
+        <div class="mkt-chg" style="color:${chg>=0?'#00ffb3':'#ff3860'}">${chg>=0?'▲':'▼'}${Math.abs(chg).toFixed(2)}%</div>
+        <div class="sig-pill" style="color:${sigColor};background:${sigColor}20">${sigDisplay}</div>
+      </div>`;
+    }).join('');
+
+    // Trades feed
+    document.getElementById('feed-count').textContent = s.trades.length + ' trades';
+    document.getElementById('feed').innerHTML = s.trades.slice(0,30).map(t => {
+      const pos = t.pnl===undefined?null:t.pnl>=0;
+      return `<div class="feed-item">
+        <div class="feed-side ${t.side==='BUY'?'buy':'sell'}">${t.side==='BUY'?'▲':'▼'}</div>
+        <div class="feed-mid"><div class="feed-pair">${t.assetId}</div><div class="feed-price">@ ${t.price.toLocaleString('sv-SE',{maximumFractionDigits:1})} kr</div></div>
+        <div><div class="feed-pnl" style="color:${pos===null?'#E8F4FF':pos?'#00ffb3':'#ff3860'}">${pos===null?fmtSEK(t.usd):((t.pnl>=0?'+':'')+fmtSEK(t.pnl,1))}</div><div class="feed-ts">${t.ts}</div></div>
+      </div>`;
+    }).join('') || '<div class="empty">Inga trades ännu — boten letar efter köpsignal</div>';
+
+    // Log
+    const colors = {buy:'#00ffb3','sell-win':'#00ffb3','sell-loss':'#ff3860',system:'#00e5ff',error:'#ff3860',veto:'#ffb703',info:'#7a8fb5'};
+    document.getElementById('terminal').innerHTML = s.logs.map(l =>
+      `<div class="log-row"><span class="log-ts">${l.ts}</span><span style="color:${colors[l.type]||'#7a8fb5'}">${l.msg}</span></div>`
+    ).join('');
+  } catch (e) {
+    document.getElementById('market').innerHTML = '<div class="empty">Kan inte ansluta till servern...</div>';
+  }
+}
+
+refresh();
+setInterval(refresh, 10000);
+window.addEventListener('resize', refresh);
+</script>
+</body>
+</html>
