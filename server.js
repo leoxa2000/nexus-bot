@@ -72,12 +72,12 @@ function saveState() {
 
 // ── ASSETS (CoinGecko IDs) ──
 const ASSETS = [
-  { id: 'BTC',  cgId: 'bitcoin',    name: 'Bitcoin',  color: '#F7931A' },
-  { id: 'ETH',  cgId: 'ethereum',   name: 'Ethereum', color: '#627EEA' },
-  { id: 'SOL',  cgId: 'solana',     name: 'Solana',   color: '#9945FF' },
-  { id: 'XRP',  cgId: 'ripple',     name: 'Ripple',   color: '#00AAE4' },
-  { id: 'DOGE', cgId: 'dogecoin',   name: 'Dogecoin', color: '#C2A633' },
-  { id: 'BNB',  cgId: 'binancecoin',name: 'BNB',      color: '#F3BA2F' },
+  { id: 'BTC',  binanceSym: 'BTCUSDT',  name: 'Bitcoin',  color: '#F7931A' },
+  { id: 'ETH',  binanceSym: 'ETHUSDT',  name: 'Ethereum', color: '#627EEA' },
+  { id: 'SOL',  binanceSym: 'SOLUSDT',  name: 'Solana',   color: '#9945FF' },
+  { id: 'XRP',  binanceSym: 'XRPUSDT',  name: 'Ripple',   color: '#00AAE4' },
+  { id: 'DOGE', binanceSym: 'DOGEUSDT', name: 'Dogecoin', color: '#C2A633' },
+  { id: 'BNB',  binanceSym: 'BNBUSDT',  name: 'BNB',      color: '#F3BA2F' },
 ];
 
 let currentPrices = {};
@@ -97,28 +97,53 @@ function log(msg, type='info') {
 // ═══════════════════════════════════════════════════════
 // FETCH REAL PRICES FROM COINGECKO (free, no API key needed)
 // ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// USD/SEK VÄXELKURS — hämtas sällan (kursen rör sig knappt inom en dag)
+// Håller oss borta helt från gränser eftersom det bara är 1 anrop/timme
+// ═══════════════════════════════════════════════════════
+let usdSekRate = 10.5; // rimligt startvärde tills första hämtningen lyckas
+async function fetchUsdSekRate() {
+  try {
+    const res = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.rates && data.rates.SEK) {
+      usdSekRate = data.rates.SEK;
+      log(`💱 USD/SEK-kurs uppdaterad: ${usdSekRate.toFixed(3)}`, 'system');
+    }
+  } catch (e) {
+    log(`⚠ Kunde inte uppdatera USD/SEK-kurs, använder senaste kända värde (${usdSekRate})`, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// FETCH REAL PRICES FROM BINANCE (gratis, ingen nyckel, mycket generösa gränser
+// — tusentals anrop/minut tillåtna, mot CoinGeckos betydligt strängare gräns)
+// ═══════════════════════════════════════════════════════
 async function fetchPrices() {
   try {
-    const ids = ASSETS.map(a => a.cgId).join(',');
-    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=sek`;
+    const symbols = JSON.stringify(ASSETS.map(a => a.binanceSym));
+    const url = `https://api.binance.com/api/v3/ticker/price?symbols=${encodeURIComponent(symbols)}`;
     const res = await fetch(url);
 
-    if (res.status === 429) {
+    if (res.status === 429 || res.status === 418) {
       consecutiveFailures++;
-      log(`⚠ CoinGecko: för många förfrågningar (429). Väntar längre nästa gång.`, 'error');
+      log(`⚠ Binance: för många förfrågningar (${res.status}). Väntar längre nästa gång.`, 'error');
       return false;
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-    const data = await res.json();
+    const data = await res.json(); // [{symbol:'BTCUSDT', price:'67240.50'}, ...]
     consecutiveFailures = 0;
 
     ASSETS.forEach(a => {
-      const price = data[a.cgId]?.sek;
-      if (price) {
-        currentPrices[a.id] = price;
+      const entry = data.find(d => d.symbol === a.binanceSym);
+      const priceUsd = entry ? parseFloat(entry.price) : null;
+      if (priceUsd) {
+        const priceSek = priceUsd * usdSekRate;
+        currentPrices[a.id] = priceSek;
         if (!state.priceHistory[a.id]) state.priceHistory[a.id] = [];
-        state.priceHistory[a.id].push(price);
+        state.priceHistory[a.id].push(priceSek);
         if (state.priceHistory[a.id].length > 60) state.priceHistory[a.id].shift();
       }
     });
@@ -486,8 +511,12 @@ async function scheduleLoop() {
   setTimeout(scheduleLoop, currentDelay);
 }
 
-fetchPrices().then(() => {
-  log('✓ NEXUS bot startad — hämtar riktiga priser från CoinGecko', 'system');
+setInterval(checkDailySnapshot, 60000 * 10);  // check every 10 min if a new day has started
+setInterval(newsCheckCycle, 60000 * 20);      // nyhetscheck: en tillgång var 20:e minut
+setInterval(fetchUsdSekRate, 60000 * 60);     // uppdatera USD/SEK-kurs en gång i timmen
+
+fetchUsdSekRate().then(() => fetchPrices()).then(() => {
+  log('✓ NEXUS bot startad — hämtar riktiga priser från Binance', 'system');
   checkDailySnapshot();
   if (CRYPTOPANIC_KEY || ALPHAVANTAGE_KEY) {
     log('🛡️ Nyhetsveto aktivt — CryptoPanic/Alpha Vantage konfigurerat', 'system');
