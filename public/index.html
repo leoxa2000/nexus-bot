@@ -86,7 +86,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 .killswitch-text{font-size:12px;color:var(--t2);margin-top:4px}
 
 /* Heat map + donut row */
-.overview-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-bottom:16px}
+.overview-grid{display:grid;grid-template-columns:0.9fr 1.4fr 0.8fr;gap:16px;margin-bottom:16px}
 .panel{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden;margin-bottom:16px}
 .panel-hdr{padding:12px 18px;font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1.5px;font-weight:600;border-bottom:1px solid var(--border);font-family:var(--mono);display:flex;justify-content:space-between}
 .heatmap-body{padding:16px;display:flex;flex-wrap:wrap;gap:10px;min-height:100px;align-content:flex-start}
@@ -102,6 +102,11 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 .legend-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
 .legend-label{flex:1;color:var(--t2)}
 .legend-val{font-family:var(--mono);font-weight:600}
+
+.tv-symbol-row{display:flex;gap:6px;padding:10px 12px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.tv-symbol-btn{padding:5px 11px;border-radius:8px;font-size:11px;font-weight:700;font-family:var(--mono);border:1px solid var(--border);background:rgba(0,0,0,.2);color:var(--t2);cursor:pointer}
+.tv-symbol-btn.active{border-color:var(--cyan);color:var(--cyan);background:rgba(0,229,255,.1)}
+.tv-chart-container{height:360px}
 
 .chart-wrap{padding:16px 18px}
 
@@ -255,6 +260,11 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
       <div class="heatmap-body" id="heatmap"><div class="heat-empty">Inga öppna positioner just nu</div></div>
     </div>
     <div class="panel" style="margin-bottom:0">
+      <div class="panel-hdr"><span>Marknadsdiagram — TradingView</span></div>
+      <div class="tv-symbol-row" id="tv-symbol-row"></div>
+      <div class="tv-chart-container" id="tv_chart_container"></div>
+    </div>
+    <div class="panel" style="margin-bottom:0">
       <div class="panel-hdr"><span>Fördelning</span></div>
       <div class="donut-wrap">
         <canvas id="donut-canvas" width="120" height="120"></canvas>
@@ -288,6 +298,72 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 
 </div>
 
+<script src="https://s3.tradingview.com/tv.js" onerror="tvScriptFailed()"></script>
+<script>
+// ═══════════════════════════════════════════════════════
+// TRADINGVIEW-DIAGRAM — gratis widget, ingen egen kod för candlesticks behövs
+// Byt symbol med knapparna, tidsintervall/indikatorer väljs inne i själva diagrammet
+// ═══════════════════════════════════════════════════════
+const TV_SYMBOLS = [
+  { id:'BTC',  tv:'BINANCE:BTCUSDT' },
+  { id:'ETH',  tv:'BINANCE:ETHUSDT' },
+  { id:'SOL',  tv:'BINANCE:SOLUSDT' },
+  { id:'XRP',  tv:'BINANCE:XRPUSDT' },
+  { id:'DOGE', tv:'BINANCE:DOGEUSDT' },
+  { id:'BNB',  tv:'BINANCE:BNBUSDT' },
+];
+let currentTvSymbol = 'BTC';
+
+function tvScriptFailed() {
+  const c = document.getElementById('tv_chart_container');
+  if (c) c.innerHTML = '<div style="padding:30px;text-align:center;color:var(--t3);font-size:12px">⚠ Diagrammet kunde inte laddas — troligen blockerat av en annonsblockerare i webbläsaren. Prova att stänga av den för denna sida, eller öppna i en annan webbläsare.</div>';
+}
+
+function loadTVChart(symbolId) {
+  if (typeof TradingView === 'undefined') { tvScriptFailed(); return; }
+  currentTvSymbol = symbolId;
+  const sym = TV_SYMBOLS.find(s => s.id === symbolId);
+  document.getElementById('tv_chart_container').innerHTML = '';
+  try {
+    new TradingView.widget({
+      autosize: true,
+      symbol: sym.tv,
+      interval: '15',
+      timezone: 'Europe/Stockholm',
+      theme: 'dark',
+      style: '1',
+      locale: 'sv',
+      toolbar_bg: '#0D1626',
+      enable_publishing: false,
+      allow_symbol_change: false,
+      hide_side_toolbar: false,
+      container_id: 'tv_chart_container'
+    });
+  } catch (e) {
+    tvScriptFailed();
+  }
+  document.querySelectorAll('.tv-symbol-btn').forEach(b => b.classList.toggle('active', b.dataset.sym === symbolId));
+}
+
+function initTvSymbolButtons() {
+  const row = document.getElementById('tv-symbol-row');
+  row.innerHTML = TV_SYMBOLS.map(s =>
+    `<button class="tv-symbol-btn ${s.id===currentTvSymbol?'active':''}" data-sym="${s.id}" onclick="loadTVChart('${s.id}')">${s.id}</button>`
+  ).join('');
+}
+
+// Vänta lite innan vi försöker — ger tv.js tid att hinna ladda och köra sig själv
+window.addEventListener('load', () => {
+  initTvSymbolButtons();
+  setTimeout(() => {
+    if (typeof TradingView === 'undefined') {
+      tvScriptFailed();
+    } else {
+      loadTVChart('BTC');
+    }
+  }, 500);
+});
+</script>
 <script>
 let settingsOpen = true;
 function toggleSettings(){
