@@ -72,12 +72,12 @@ function saveState() {
 
 // ── ASSETS (CoinGecko IDs) ──
 const ASSETS = [
-  { id: 'BTC',  binanceSym: 'BTCUSDT',  name: 'Bitcoin',  color: '#F7931A' },
-  { id: 'ETH',  binanceSym: 'ETHUSDT',  name: 'Ethereum', color: '#627EEA' },
-  { id: 'SOL',  binanceSym: 'SOLUSDT',  name: 'Solana',   color: '#9945FF' },
-  { id: 'XRP',  binanceSym: 'XRPUSDT',  name: 'Ripple',   color: '#00AAE4' },
-  { id: 'DOGE', binanceSym: 'DOGEUSDT', name: 'Dogecoin', color: '#C2A633' },
-  { id: 'BNB',  binanceSym: 'BNBUSDT',  name: 'BNB',      color: '#F3BA2F' },
+  { id: 'BTC',  binanceSym: 'BTCUSDT',  ccId: 'bitcoin',      name: 'Bitcoin',  color: '#F7931A' },
+  { id: 'ETH',  binanceSym: 'ETHUSDT',  ccId: 'ethereum',     name: 'Ethereum', color: '#627EEA' },
+  { id: 'SOL',  binanceSym: 'SOLUSDT',  ccId: 'solana',       name: 'Solana',   color: '#9945FF' },
+  { id: 'XRP',  binanceSym: 'XRPUSDT',  ccId: 'xrp',          name: 'Ripple',   color: '#00AAE4' },
+  { id: 'DOGE', binanceSym: 'DOGEUSDT', ccId: 'dogecoin',     name: 'Dogecoin', color: '#C2A633' },
+  { id: 'BNB',  binanceSym: 'BNBUSDT',  ccId: 'binance-coin', name: 'BNB',      color: '#F3BA2F' },
 ];
 
 let currentPrices = {};
@@ -117,28 +117,34 @@ async function fetchUsdSekRate() {
 }
 
 // ═══════════════════════════════════════════════════════
-// FETCH REAL PRICES FROM BINANCE (gratis, ingen nyckel, mycket generösa gränser
-// — tusentals anrop/minut tillåtna, mot CoinGeckos betydligt strängare gräns)
+// FETCH REAL PRICES FROM COINCAP (gratis, ingen nyckel, ingen regionsblockering
+// — till skillnad från Binance som juridiskt blockerar vissa serverregioner)
 // ═══════════════════════════════════════════════════════
 async function fetchPrices() {
   try {
-    const symbols = JSON.stringify(ASSETS.map(a => a.binanceSym));
-    const url = `https://api.binance.com/api/v3/ticker/price?symbols=${encodeURIComponent(symbols)}`;
+    const ids = ASSETS.map(a => a.ccId).join(',');
+    const url = `https://api.coincap.io/v2/assets?ids=${ids}`;
     const res = await fetch(url);
 
-    if (res.status === 429 || res.status === 418) {
+    if (res.status === 429) {
       consecutiveFailures++;
-      log(`⚠ Binance: för många förfrågningar (${res.status}). Väntar längre nästa gång.`, 'error');
+      log(`⚠ CoinCap: för många förfrågningar (429). Väntar längre nästa gång.`, 'error');
+      return false;
+    }
+    if (res.status === 451) {
+      consecutiveFailures++;
+      log(`⚠ CoinCap: blockerad (451). Väntar längre nästa gång.`, 'error');
       return false;
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-    const data = await res.json(); // [{symbol:'BTCUSDT', price:'67240.50'}, ...]
+    const json = await res.json();
+    const data = json.data || []; // [{id:'bitcoin', priceUsd:'67240.12'}, ...]
     consecutiveFailures = 0;
 
     ASSETS.forEach(a => {
-      const entry = data.find(d => d.symbol === a.binanceSym);
-      const priceUsd = entry ? parseFloat(entry.price) : null;
+      const entry = data.find(d => d.id === a.ccId);
+      const priceUsd = entry ? parseFloat(entry.priceUsd) : null;
       if (priceUsd) {
         const priceSek = priceUsd * usdSekRate;
         currentPrices[a.id] = priceSek;
@@ -516,7 +522,7 @@ setInterval(newsCheckCycle, 60000 * 20);      // nyhetscheck: en tillgång var 2
 setInterval(fetchUsdSekRate, 60000 * 60);     // uppdatera USD/SEK-kurs en gång i timmen
 
 fetchUsdSekRate().then(() => fetchPrices()).then(() => {
-  log('✓ NEXUS bot startad — hämtar riktiga priser från Binance', 'system');
+  log('✓ NEXUS bot startad — hämtar riktiga priser från CoinCap', 'system');
   checkDailySnapshot();
   if (CRYPTOPANIC_KEY || ALPHAVANTAGE_KEY) {
     log('🛡️ Nyhetsveto aktivt — CryptoPanic/Alpha Vantage konfigurerat', 'system');
