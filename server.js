@@ -72,12 +72,26 @@ function saveState() {
 
 // ── ASSETS (CoinGecko IDs) ──
 const ASSETS = [
-  { id: 'BTC',  binanceSym: 'BTCUSDT',  ccId: 'bitcoin',      name: 'Bitcoin',  color: '#F7931A' },
-  { id: 'ETH',  binanceSym: 'ETHUSDT',  ccId: 'ethereum',     name: 'Ethereum', color: '#627EEA' },
-  { id: 'SOL',  binanceSym: 'SOLUSDT',  ccId: 'solana',       name: 'Solana',   color: '#9945FF' },
-  { id: 'XRP',  binanceSym: 'XRPUSDT',  ccId: 'xrp',          name: 'Ripple',   color: '#00AAE4' },
-  { id: 'DOGE', binanceSym: 'DOGEUSDT', ccId: 'dogecoin',     name: 'Dogecoin', color: '#C2A633' },
-  { id: 'BNB',  binanceSym: 'BNBUSDT',  ccId: 'binance-coin', name: 'BNB',      color: '#F3BA2F' },
+  { id: 'BTC',  name: 'Bitcoin',          color: '#F7931A' },
+  { id: 'ETH',  name: 'Ethereum',         color: '#627EEA' },
+  { id: 'SOL',  name: 'Solana',           color: '#9945FF' },
+  { id: 'XRP',  name: 'Ripple',           color: '#00AAE4' },
+  { id: 'DOGE', name: 'Dogecoin',         color: '#C2A633' },
+  { id: 'BNB',  name: 'BNB',              color: '#F3BA2F' },
+  { id: 'ADA',  name: 'Cardano',          color: '#0033AD' },
+  { id: 'DOT',  name: 'Polkadot',         color: '#E6007A' },
+  { id: 'AVAX', name: 'Avalanche',        color: '#E84142' },
+  { id: 'LTC',  name: 'Litecoin',         color: '#BFBBBB' },
+  { id: 'LINK', name: 'Chainlink',        color: '#2A5ADA' },
+  { id: 'MATIC',name: 'Polygon',          color: '#8247E5' },
+  { id: 'UNI',  name: 'Uniswap',          color: '#FF007A' },
+  { id: 'ATOM', name: 'Cosmos',           color: '#2E3148' },
+  { id: 'XLM',  name: 'Stellar',          color: '#14B6E7' },
+  { id: 'ETC',  name: 'Ethereum Classic', color: '#328332' },
+  { id: 'ALGO', name: 'Algorand',         color: '#000000' },
+  { id: 'FIL',  name: 'Filecoin',         color: '#0090FF' },
+  { id: 'APT',  name: 'Aptos',            color: '#00D4AA' },
+  { id: 'ARB',  name: 'Arbitrum',         color: '#28A0F0' },
 ];
 
 let currentPrices = {};
