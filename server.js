@@ -117,49 +117,45 @@ async function fetchUsdSekRate() {
 }
 
 // ═══════════════════════════════════════════════════════
-// FETCH REAL PRICES FROM COINCAP (gratis, ingen nyckel, ingen regionsblockering
-// — till skillnad från Binance som juridiskt blockerar vissa serverregioner)
+// FETCH REAL PRICES FROM COINBASE (gratis, ingen nyckel, stor etablerad börs
+// — hämtar en tillgång i taget parallellt, så att om t.ex. BNB saknas
+// påverkar det inte de andra 5 tillgångarna)
 // ═══════════════════════════════════════════════════════
 async function fetchPrices() {
-  try {
-    const ids = ASSETS.map(a => a.ccId).join(',');
-    const url = `https://api.coincap.io/v2/assets?ids=${ids}`;
-    const res = await fetch(url);
+  const results = await Promise.allSettled(
+    ASSETS.map(a => fetch(`https://api.coinbase.com/v2/prices/${a.id}-USD/spot`).then(async res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      const priceUsd = parseFloat(json.data?.amount);
+      if (!priceUsd) throw new Error('inget pris i svaret');
+      return { id: a.id, priceUsd };
+    }))
+  );
 
-    if (res.status === 429) {
-      consecutiveFailures++;
-      log(`⚠ CoinCap: för många förfrågningar (429). Väntar längre nästa gång.`, 'error');
-      return false;
+  let successCount = 0;
+  results.forEach((r, i) => {
+    const asset = ASSETS[i];
+    if (r.status === 'fulfilled') {
+      successCount++;
+      const priceSek = r.value.priceUsd * usdSekRate;
+      currentPrices[asset.id] = priceSek;
+      if (!state.priceHistory[asset.id]) state.priceHistory[asset.id] = [];
+      state.priceHistory[asset.id].push(priceSek);
+      if (state.priceHistory[asset.id].length > 60) state.priceHistory[asset.id].shift();
+    } else {
+      // En enskild tillgång kan sakna stöd hos Coinbase (t.ex. BNB) — logga men fortsätt med resten
+      if (consecutiveFailures === 0) log(`⚠ ${asset.id}: ${r.reason.message}`, 'error');
     }
-    if (res.status === 451) {
-      consecutiveFailures++;
-      log(`⚠ CoinCap: blockerad (451). Väntar längre nästa gång.`, 'error');
-      return false;
-    }
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  });
 
-    const json = await res.json();
-    const data = json.data || []; // [{id:'bitcoin', priceUsd:'67240.12'}, ...]
-    consecutiveFailures = 0;
-
-    ASSETS.forEach(a => {
-      const entry = data.find(d => d.id === a.ccId);
-      const priceUsd = entry ? parseFloat(entry.priceUsd) : null;
-      if (priceUsd) {
-        const priceSek = priceUsd * usdSekRate;
-        currentPrices[a.id] = priceSek;
-        if (!state.priceHistory[a.id]) state.priceHistory[a.id] = [];
-        state.priceHistory[a.id].push(priceSek);
-        if (state.priceHistory[a.id].length > 60) state.priceHistory[a.id].shift();
-      }
-    });
-    lastPriceUpdate = Date.now();
-    return true;
-  } catch (e) {
+  if (successCount === 0) {
     consecutiveFailures++;
-    log(`⚠ Prisfetch misslyckades: ${e.message}`, 'error');
+    log(`⚠ Prisfetch misslyckades helt (0/${ASSETS.length} tillgångar)`, 'error');
     return false;
   }
+  consecutiveFailures = 0;
+  lastPriceUpdate = Date.now();
+  return true;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -522,7 +518,7 @@ setInterval(newsCheckCycle, 60000 * 20);      // nyhetscheck: en tillgång var 2
 setInterval(fetchUsdSekRate, 60000 * 60);     // uppdatera USD/SEK-kurs en gång i timmen
 
 fetchUsdSekRate().then(() => fetchPrices()).then(() => {
-  log('✓ NEXUS bot startad — hämtar riktiga priser från CoinCap', 'system');
+  log('✓ NEXUS bot startad — hämtar riktiga priser från Coinbase', 'system');
   checkDailySnapshot();
   if (CRYPTOPANIC_KEY || ALPHAVANTAGE_KEY) {
     log('🛡️ Nyhetsveto aktivt — CryptoPanic/Alpha Vantage konfigurerat', 'system');
