@@ -132,7 +132,7 @@ async function fetchPrices() {
 // ═══════════════════════════════════════════════════════
 // TECHNICAL SIGNALS
 // ═══════════════════════════════════════════════════════
-function computeRSI(hist, period=14) {
+function computeRSI(hist, period=7) {
   if (hist.length < period+1) return 50;
   const recent = hist.slice(-period-1);
   let gains=0, losses=0;
@@ -148,9 +148,9 @@ function computeRSI(hist, period=14) {
 // Wraps the pure technical signal with the news veto layer
 function getSignal(assetId) {
   const hist = state.priceHistory[assetId];
-  if (!hist || hist.length < 20) return 'HOLD';
+  if (!hist || hist.length < 8) return 'HOLD';
   const price = currentPrices[assetId];
-  const recent = hist.slice(-20);
+  const recent = hist.slice(-8); // kortare minne = känsligare för små, snabba rörelser (mer likt demot)
   const min = Math.min(...recent), max = Math.max(...recent), range = max-min || 1;
   const posInRange = (price-min)/range;
   const rsi = computeRSI(hist);
@@ -462,8 +462,8 @@ function getVerdict() {
 // ═══════════════════════════════════════════════════════
 // INTERVALS
 // ═══════════════════════════════════════════════════════
-setInterval(fetchPrices, 30000);              // every 30 sec
-setInterval(botTick, 30000);                  // check for trades every 30 sec
+setInterval(fetchPrices, 15000);              // every 15 sec — mer reaktiv, fortfarande säkert för CoinGecko gratis-gräns
+setInterval(botTick, 15000);                  // check for trades every 15 sec
 setInterval(checkDailySnapshot, 60000 * 10);  // check every 10 min if a new day has started
 setInterval(newsCheckCycle, 60000 * 20);      // nyhetscheck: en tillgång var 20:e minut (håller oss inom gratis-gränser + Claude-budget)
 
