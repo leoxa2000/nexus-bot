@@ -616,6 +616,25 @@ app.post('/api/toggle', express.json(), (req, res) => {
   res.json({ botOn: state.botOn });
 });
 
+// Sätt in eller ta ut kapital UTAN att nollställa historik, trades eller dagräknare.
+// Både cash och startCash justeras lika mycket, så insättningar aldrig räknas som "vinst"
+// i PnL-statistiken — bara riktiga trades gör det.
+app.post('/api/deposit', express.json(), (req, res) => {
+  const amount = parseFloat(req.body?.amount);
+  if (!amount || amount === 0) {
+    return res.status(400).json({ error: 'Ange ett belopp skilt från 0.' });
+  }
+  if (amount < 0 && Math.abs(amount) > state.cash) {
+    return res.status(400).json({ error: `Kan inte ta ut mer än tillgänglig kassa (${state.cash.toFixed(0)} kr).` });
+  }
+  state.cash += amount;
+  state.startCash += amount;
+  if (state.cash > state.highWaterMark) state.highWaterMark = state.cash;
+  log(`${amount > 0 ? '💰 Insättning' : '💸 Uttag'}: ${Math.abs(amount).toFixed(0)} kr — ny kassa: ${state.cash.toFixed(0)} kr`, 'system');
+  saveState();
+  res.json({ ok: true, cash: state.cash, startCash: state.startCash });
+});
+
 app.post('/api/reset', express.json(), (req, res) => {
   const requested = parseFloat(req.body?.startCash);
   const newStartCash = (requested && requested > 0) ? requested : 1000;
