@@ -221,6 +221,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
       <span id="bot-badge"><span class="badge red">OFFLINE</span></span>
       <button class="btn primary" id="toggle-btn" onclick="toggleBot()">▶ Starta</button>
       <button class="btn ghost" id="news-btn" onclick="toggleNews()">🛡️ Nyhetsveto: PÅ</button>
+      <button class="btn ghost" onclick="depositCapital()">➕ Sätt in/ta ut</button>
       <button class="btn danger" onclick="resetBot()">↻ Återställ</button>
     </div>
   </div>
@@ -464,6 +465,20 @@ async function toggleNews() {
   await fetch('/api/toggle-news', {method:'POST'});
   refresh();
 }
+async function depositCapital() {
+  const input = prompt('Belopp att sätta in (positivt tal) eller ta ut (negativt tal), t.ex. 500 eller -200:', '');
+  if (input === null) return; // avbrutet
+  const amount = parseFloat(input);
+  if (!amount || amount === 0) { alert('Ange ett giltigt belopp skilt från 0.'); return; }
+  const res = await fetch('/api/deposit', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ amount })
+  });
+  const data = await res.json();
+  if (!res.ok) { alert(data.error || 'Något gick fel.'); return; }
+  refresh();
+}
+
 async function resetBot() {
   const amountStr = prompt('Nytt startkapital (kr) — historik och positioner nollställs:', '1000');
   if (amountStr === null) return; // avbrutet
