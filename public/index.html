@@ -75,7 +75,7 @@ body{overflow-y:auto}
 .settings-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px 22px;margin-bottom:16px}
 .settings-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;cursor:pointer}
 .settings-title{font-size:12px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);font-weight:600}
-.settings-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.settings-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
 .slider-box{background:rgba(0,0,0,.2);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
 .slider-label{display:flex;justify-content:space-between;font-size:11px;color:var(--t2);margin-bottom:8px;font-family:var(--mono)}
 .slider-val{font-weight:700;color:var(--cyan)}
@@ -271,14 +271,19 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
           <div class="slider-range"><span>1%</span><span>Andel av kassan som satsas per köp</span><span>50%</span></div>
         </div>
         <div class="slider-box">
-          <div class="slider-label"><span>Trailing-nivå</span><span class="slider-val" id="takeProfit-val">0.6%</span></div>
-          <input type="range" min="0.1" max="10" step="0.1" value="0.6" id="takeProfit-slider" oninput="document.getElementById('takeProfit-val').textContent=this.value+'%'">
-          <div class="slider-range"><span>0.1%</span><span>Vid denna vinst börjar boten bevaka trenden — säljer vid vändning, inte vid ett fast tal</span><span>10%</span></div>
+          <div class="slider-label"><span>Trailing-nivå</span><span class="slider-val" id="takeProfit-val">1.8%</span></div>
+          <input type="range" min="0.1" max="10" step="0.1" value="1.8" id="takeProfit-slider" oninput="document.getElementById('takeProfit-val').textContent=this.value+'%'">
+          <div class="slider-range"><span>0.1%</span><span>Vid denna vinst börjar boten bevaka trenden — höjt för marginal ovanför handelsavgifter (~1.2%)</span><span>10%</span></div>
         </div>
         <div class="slider-box">
           <div class="slider-label"><span>Nödbroms</span><span class="slider-val" id="killSwitchPct-val">20%</span></div>
           <input type="range" min="5" max="50" step="1" value="20" id="killSwitchPct-slider" oninput="document.getElementById('killSwitchPct-val').textContent=this.value+'%'">
           <div class="slider-range"><span>5%</span><span>Stoppar boten vid nedgång från toppen</span><span>50%</span></div>
+        </div>
+        <div class="slider-box">
+          <div class="slider-label"><span>Max positioner</span><span class="slider-val" id="maxPositions-val">8</span></div>
+          <input type="range" min="1" max="20" step="1" value="8" id="maxPositions-slider" oninput="document.getElementById('maxPositions-val').textContent=this.value">
+          <div class="slider-range"><span>1</span><span>Max antal valutor öppna samtidigt — sprider inte ut sig över alla 20 på en gång</span><span>20</span></div>
         </div>
       </div>
       <button class="save-cfg-btn" onclick="saveConfig()">💾 Spara inställningar</button>
@@ -311,7 +316,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
   <!-- HEAT MAP + DONUT -->
   <div class="overview-grid">
     <div class="panel" style="margin-bottom:0">
-      <div class="panel-hdr"><span>Heat Map — dina positioner</span></div>
+      <div class="panel-hdr"><span>Heat Map — dina positioner</span><span id="position-count"></span></div>
       <div class="heatmap-body" id="heatmap"><div class="heat-empty">Inga öppna positioner just nu</div></div>
     </div>
     <div class="panel" style="margin-bottom:0">
@@ -450,9 +455,10 @@ async function saveConfig(){
   const tradeSize = document.getElementById('tradeSize-slider').value;
   const takeProfit = document.getElementById('takeProfit-slider').value;
   const killSwitchPct = document.getElementById('killSwitchPct-slider').value;
+  const maxPositions = document.getElementById('maxPositions-slider').value;
   await fetch('/api/config', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ tradeSize, takeProfit, killSwitchPct })
+    body: JSON.stringify({ tradeSize, takeProfit, killSwitchPct, maxPositions })
   });
   refresh();
 }
@@ -622,6 +628,8 @@ async function refresh() {
       document.getElementById('takeProfit-val').textContent = s.cfg.takeProfit+'%';
       document.getElementById('killSwitchPct-slider').value = s.cfg.killSwitchPct;
       document.getElementById('killSwitchPct-val').textContent = s.cfg.killSwitchPct+'%';
+      document.getElementById('maxPositions-slider').value = s.cfg.maxPositions;
+      document.getElementById('maxPositions-val').textContent = s.cfg.maxPositions;
       window.__slidersInitialized = true;
     }
 
@@ -649,6 +657,7 @@ async function refresh() {
 
     // HEAT MAP — only assets currently held, size = capital weight, color = pnl direction
     const holdingsEntries = Object.entries(s.holdings || {});
+    document.getElementById('position-count').textContent = `${holdingsEntries.length} / ${s.cfg.maxPositions}`;
     const heatEl = document.getElementById('heatmap');
     if (!holdingsEntries.length) {
       heatEl.innerHTML = '<div class="heat-empty">Inga öppna positioner just nu</div>';
