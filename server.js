@@ -193,6 +193,10 @@ function computeRSI(hist, period=7) {
 // (när "vinstmål"-reglaget väl aktiverat trailingen)
 const TRAILING_PULLBACK_PCT = 0.3;
 
+// Handelsavgift — approximation av Coinbase Advanced Trade taker fee vid låg volym.
+// Utan denna underskattar paper trading vinsten avsevärt jämfört med riktig handel.
+const COINBASE_FEE_RATE = 0.006; // 0.6% per sida (köp och sälj var för sig)
+
 function getSignal(assetId) {
   const hist = state.priceHistory[assetId];
   if (!hist || hist.length < 8) return 'HOLD';
@@ -396,32 +400,42 @@ function botTick() {
     if (signal === 'BUY') {
       const usd = state.cash * (state.cfg.tradeSize/100);
       if (usd < 10 || usd > state.cash) return;
-      const qty = usd / price;
-      state.cash -= usd;
+      // Handelsavgift: Coinbase Advanced Trade tar ~0.6% per sida (taker fee, låg volym).
+      // Avgiften dras ur beloppet innan det köper krypto — precis som på riktigt.
+      const feeAmount = usd * COINBASE_FEE_RATE;
+      const netUsd = usd - feeAmount;
+      const qty = netUsd / price;
+      state.cash -= usd; // hela beloppet (inkl. avgift) dras från kassan
       const cur = state.holdings[asset.id] || { qty:0, avgCost:0, peak:0 };
       const nq = cur.qty + qty;
+      // avgCost räknas på BRUTTObeloppet delat på NETTO-antalet — så kostnaden per enhet
+      // redan speglar avgiften. Det gör att trailing/stop loss automatiskt räknar rätt.
       const na = (cur.qty*cur.avgCost + usd) / nq;
       const newPeak = Math.max(cur.peak || 0, price); // toppris bevaras eller sätts vid köp
       state.holdings[asset.id] = { qty:nq, avgCost:na, peak:newPeak };
       state.trades.unshift({
         id: Date.now(), side: 'BUY', assetId: asset.id, name: asset.name,
-        qty, price, usd, ts: new Date().toLocaleTimeString('sv-SE'),
+        qty, price, usd, fee: feeAmount, ts: new Date().toLocaleTimeString('sv-SE'),
         date: new Date().toISOString().slice(0,10)
       });
       state.lastTradeAt[asset.id] = Date.now();
-      log(`🟢 KÖP ${asset.id} för ${usd.toFixed(0)} kr @ ${price.toFixed(0)} kr`, 'buy');
+      log(`🟢 KÖP ${asset.id} för ${usd.toFixed(0)} kr @ ${price.toFixed(0)} kr (avgift: ${feeAmount.toFixed(2)} kr)`, 'buy');
     } else if (signal === 'SELL' || signal === 'STOPLOSS') {
       const h = state.holdings[asset.id];
       if (!h || h.qty <= 0) return;
-      const usd = h.qty * price;
-      const pnl = (price - h.avgCost) * h.qty;
-      state.cash += usd;
+      const grossUsd = h.qty * price;
+      const feeAmount = grossUsd * COINBASE_FEE_RATE;
+      const netUsd = grossUsd - feeAmount;
+      // pnl = vad vi faktiskt fick i handen (efter säljavgift) minus vad positionen kostade
+      // (avgCost innehåller redan köpavgiften) — alltså riktig vinst/förlust efter BÅDA avgifterna
+      const pnl = netUsd - (h.qty * h.avgCost);
+      state.cash += netUsd;
       state.realizedPnl += pnl;
       const soldPeak = h.peak;
       delete state.holdings[asset.id];
       state.trades.unshift({
         id: Date.now(), side: 'SÄLJ', assetId: asset.id, name: asset.name,
-        qty: h.qty, price, usd, pnl,
+        qty: h.qty, price, usd: netUsd, fee: feeAmount, pnl,
         exitReason: signal === 'STOPLOSS' ? 'SL' : 'TP',
         ts: new Date().toLocaleTimeString('sv-SE'),
         date: new Date().toISOString().slice(0,10)
@@ -433,7 +447,7 @@ function botTick() {
       if (state.worstTrade === null || pnl < state.worstTrade) state.worstTrade = pnl;
       const emoji = signal === 'STOPLOSS' ? '🛑' : '📉';
       const reasonTxt = signal === 'STOPLOSS' ? 'stop loss' : `trend vände (topp ${soldPeak.toFixed(0)} kr)`;
-      log(`${emoji} SÄLJ ${asset.id} @ ${price.toFixed(0)} kr — ${reasonTxt} — PnL: ${pnl>=0?'+':''}${pnl.toFixed(1)} kr`, pnl>=0?'sell-win':'sell-loss');
+      log(`${emoji} SÄLJ ${asset.id} @ ${price.toFixed(0)} kr — ${reasonTxt} — PnL: ${pnl>=0?'+':''}${pnl.toFixed(1)} kr (avgifter redan borträknade, säljavgift: ${feeAmount.toFixed(2)} kr)`, pnl>=0?'sell-win':'sell-loss');
     }
   });
 
