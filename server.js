@@ -31,10 +31,11 @@ let state = {
   priceHistory: {},    // last 60 prices per asset
   botOn: true,         // bot starts automatically
   cfg: {
-    takeProfit: 0.6,     // % vinstmål — INSTÄLLNINGSBAR av användaren
+    takeProfit: 1.8,     // % vinstmål — höjt från 0.6% (2 sep) — ger marginal ovanför ~1.2% i handelsavgifter
     tradeSize: 8,        // % av kassan per trade — INSTÄLLNINGSBAR
     stopLoss: 1.5,       // % stop loss per enskild trade (fast just nu)
-    killSwitchPct: 20    // % nedgång från högsta värde innan NÖDBROMS — INSTÄLLNINGSBAR
+    killSwitchPct: 20,   // % nedgång från högsta värde innan NÖDBROMS — INSTÄLLNINGSBAR
+    maxPositions: 8      // max antal öppna positioner samtidigt — INSTÄLLNINGSBAR (löser koncentrationsrisk)
   },
   lastTradeAt: {},
   realizedPnl: 0,
@@ -398,6 +399,11 @@ function botTick() {
       return; // teknisk köpsignal men nyheter blockerar — gör ingenting, ingen loggning varje gång för att undvika spam
     }
     if (signal === 'BUY') {
+      // Max antal samtidiga positioner — löser koncentrationsrisken (allt kapital i alla 20 samtidigt)
+      const openPositions = Object.keys(state.holdings).length;
+      if (openPositions >= state.cfg.maxPositions && !state.holdings[asset.id]) {
+        return; // redan max antal olika valutor öppna — vänta tills en säljs innan en ny köps
+      }
       const usd = state.cash * (state.cfg.tradeSize/100);
       if (usd < 10 || usd > state.cash) return;
       // Handelsavgift: Coinbase Advanced Trade tar ~0.6% per sida (taker fee, låg volym).
@@ -673,11 +679,12 @@ app.post('/api/reset', express.json(), (req, res) => {
 
 // Uppdatera reglagen: kapital/trade, vinstmål, nödbroms-gräns
 app.post('/api/config', express.json(), (req, res) => {
-  const { tradeSize, takeProfit, killSwitchPct } = req.body;
+  const { tradeSize, takeProfit, killSwitchPct, maxPositions } = req.body;
   if (tradeSize != null) state.cfg.tradeSize = Math.max(1, Math.min(50, parseFloat(tradeSize)));
   if (takeProfit != null) state.cfg.takeProfit = Math.max(0.1, Math.min(10, parseFloat(takeProfit)));
   if (killSwitchPct != null) state.cfg.killSwitchPct = Math.max(5, Math.min(50, parseFloat(killSwitchPct)));
-  log(`⚙ Inställningar uppdaterade: kapital/trade ${state.cfg.tradeSize}%, vinstmål ${state.cfg.takeProfit}%, nödbroms ${state.cfg.killSwitchPct}%`, 'system');
+  if (maxPositions != null) state.cfg.maxPositions = Math.max(1, Math.min(20, Math.round(parseFloat(maxPositions))));
+  log(`⚙ Inställningar uppdaterade: kapital/trade ${state.cfg.tradeSize}%, vinstmål ${state.cfg.takeProfit}%, nödbroms ${state.cfg.killSwitchPct}%, max positioner ${state.cfg.maxPositions}`, 'system');
   saveState();
   res.json({ cfg: state.cfg });
 });
